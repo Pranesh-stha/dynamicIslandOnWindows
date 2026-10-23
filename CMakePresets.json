@@ -1,0 +1,17 @@
+{
+  "version": 6,
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "MSVC x64 (VS Build Tools 2026)",
+      "description": "Always uses the Microsoft compiler, never MinGW.",
+      "generator": "Visual Studio 18 2026",
+      "architecture": { "value": "x64", "strategy": "set" },
+      "binaryDir": "${sourceDir}/build"
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "displayName": "Debug", "configurePreset": "default", "configuration": "Debug" },
+    { "name": "release", "displayName": "Release", "configurePreset": "default", "configuration": "Release" }
+  ]
+}

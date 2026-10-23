@@ -1,0 +1,13 @@
+# Build output (CMake + MSBuild)
+build/
+out/
+
+# Editor / IDE state
+.vs/
+*.user
+CMakeUserPresets.json
+
+# Debugger / crash files
+*.pdb
+*.ilk
+*.dmp
