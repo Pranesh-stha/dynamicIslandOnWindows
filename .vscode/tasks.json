@@ -2,10 +2,24 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "Island: quit running copy",
+      "detail": "A running Island.exe can't be overwritten, so close it before building.",
+      "type": "process",
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-Command",
+        "$exe = @('build/Debug/Island.exe', 'build/Release/Island.exe') | Where-Object { Test-Path $_ } | Select-Object -First 1; if ($exe) { Start-Process $exe -ArgumentList '--quit' -Wait }"
+      ],
+      "presentation": { "reveal": "silent" },
+      "problemMatcher": []
+    },
+    {
       "label": "CMake: build",
       "type": "cmake",
       "command": "build",
       "targets": ["Island"],
+      "dependsOn": ["Island: quit running copy"],
       "group": { "kind": "build", "isDefault": true },
       "problemMatcher": ["$msCompile"]
     }

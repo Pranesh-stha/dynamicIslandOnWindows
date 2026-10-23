@@ -20,7 +20,13 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 # WIN32 = a windowed app (entry point wWinMain, no console window).
 add_executable(Island WIN32
     src/main.cpp
+    src/IslandWindow.cpp
+    src/render/IslandVisuals.cpp
+    src/platform/Tray.cpp
+    src/app.manifest          # embedded into the exe: DPI awareness, Windows 10/11
 )
+
+target_include_directories(Island PRIVATE src)
 
 target_compile_definitions(Island PRIVATE
     UNICODE _UNICODE          # use the wide-character (W) Win32 functions
@@ -35,5 +41,9 @@ target_compile_options(Island PRIVATE
     /bigobj       # C++/WinRT headers produce large object files
 )
 
-# windowsapp.lib provides the WinRT functions that C++/WinRT calls into.
-target_link_libraries(Island PRIVATE windowsapp)
+target_link_libraries(Island PRIVATE
+    windowsapp      # WinRT functions that C++/WinRT calls into
+    CoreMessaging   # CreateDispatcherQueueController
+    dwmapi          # DwmSetWindowAttribute
+    shcore          # GetDpiForMonitor
+)

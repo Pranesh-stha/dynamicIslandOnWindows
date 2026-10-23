@@ -1,107 +1,94 @@
-// Island - Phase 0: a plain window that proves the toolchain works.
+// Island - entry point.
 //
-// What this file shows:
-//   1. wWinMain       - where every windowed Windows app starts.
-//   2. Window class   - a template that says "windows of this kind are handled by WindowProc".
-//   3. Message loop   - the app sleeps until Windows sends it a message, handles it, sleeps again.
-//   4. C++/WinRT      - calling modern Windows APIs from C++ (we read the Windows version
-//                       and open the Display settings page, which the island will do later).
+// Startup order:
+//   1. Make sure only one Island runs. A newer launch replaces the older one,
+//      and "Island.exe --quit" just closes the running one.
+//   2. Prepare this thread for WinRT and the compositor.
+//   3. Create the island window and the tray icon.
+//   4. Run the message loop until "Quit Island" is chosen.
 
 #include <windows.h>
+#include <Unknwn.h>
+#include <DispatcherQueue.h>
 
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.System.h>
-#include <winrt/Windows.System.Profile.h>
 
-#include <cstdint>
-#include <format>
-#include <string>
+#include <string_view>
+
+#include "AppMessages.h"
+#include "IslandWindow.h"
+#include "platform/Tray.h"
 
 namespace
 {
-    std::wstring g_text;
+    // A named mutex is a system-wide flag: whoever owns it is "the" running Island.
+    constexpr wchar_t kSingleInstanceMutex[] = L"Local\\Island.SingleInstance";
 
-    // DeviceFamilyVersion is one big number that packs four 16-bit parts:
-    // major.minor.build.revision (for example 10.0.26200.6899).
-    std::wstring ReadWindowsVersion()
+    // Asks the running Island to quit and waits (up to 3 s) until it has.
+    // Returns true once this process owns the single-instance mutex.
+    bool TakeOverFromRunningCopy(HANDLE mutex)
     {
-        using winrt::Windows::System::Profile::AnalyticsInfo;
-        const std::uint64_t v = std::stoull(std::wstring{ AnalyticsInfo::VersionInfo().DeviceFamilyVersion() });
-        return std::format(L"{}.{}.{}.{}", (v >> 48) & 0xFFFF, (v >> 32) & 0xFFFF, (v >> 16) & 0xFFFF, v & 0xFFFF);
+        if (HWND running = FindWindowW(IslandWindow::kClassName, nullptr))
+        {
+            PostMessageW(running, AppQuitMessage(), 0, 0);
+        }
+        const DWORD result = WaitForSingleObject(mutex, 3000);
+        return result == WAIT_OBJECT_0 || result == WAIT_ABANDONED;
     }
 
-    // Windows calls this function for every message sent to our window.
-    LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+    // The compositor needs a DispatcherQueue (a WinRT work queue) on the UI thread.
+    winrt::Windows::System::DispatcherQueueController CreateDispatcherQueueForThisThread()
     {
-        switch (message)
-        {
-        case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC dc = BeginPaint(hwnd, &ps);
-            RECT rc;
-            GetClientRect(hwnd, &rc);
-            InflateRect(&rc, -24, -24);
-            SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
-            SetBkMode(dc, TRANSPARENT);
-            DrawTextW(dc, g_text.c_str(), -1, &rc, DT_CENTER | DT_WORDBREAK);
-            EndPaint(hwnd, &ps);
-            return 0;
-        }
-
-        case WM_LBUTTONUP:
-            // Fire-and-forget: Windows opens Settings > Display on its own.
-            winrt::Windows::System::Launcher::LaunchUriAsync(winrt::Windows::Foundation::Uri{ L"ms-settings:display" });
-            return 0;
-
-        case WM_DESTROY:
-            // The window is closing: ask the message loop to stop.
-            PostQuitMessage(0);
-            return 0;
-        }
-
-        // Anything we don't handle gets Windows' default behavior (moving, resizing, ...).
-        return DefWindowProcW(hwnd, message, wParam, lParam);
+        DispatcherQueueOptions options{ sizeof(options), DQTYPE_THREAD_CURRENT, DQTAT_COM_STA };
+        winrt::Windows::System::DispatcherQueueController controller{ nullptr };
+        winrt::check_hresult(CreateDispatcherQueueController(options,
+            reinterpret_cast<ABI::Windows::System::IDispatcherQueueController**>(winrt::put_abi(controller))));
+        return controller;
     }
 }
 
-int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int showCommand)
+int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR commandLine, _In_ int)
 {
-    // The UI thread must be "single-threaded apartment" for WinRT UI APIs.
-    winrt::init_apartment(winrt::apartment_type::single_threaded);
+    const bool quitOnly = std::wstring_view{ commandLine }.find(L"--quit") != std::wstring_view::npos;
 
-    g_text = std::format(
-        L"Island - Phase 0\n\n"
-        L"Windows version (read with C++/WinRT): {}\n\n"
-        L"Click anywhere to open Display settings.",
-        ReadWindowsVersion());
-
-    WNDCLASSEXW windowClass{};
-    windowClass.cbSize = sizeof(windowClass);
-    windowClass.lpfnWndProc = WindowProc;
-    windowClass.hInstance = instance;
-    windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
-    windowClass.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
-    windowClass.lpszClassName = L"IslandPhase0";
-    RegisterClassExW(&windowClass);
-
-    HWND hwnd = CreateWindowExW(
-        0, windowClass.lpszClassName, L"Island (Phase 0)", WS_OVERLAPPEDWINDOW,
-        CW_USEDEFAULT, CW_USEDEFAULT, 520, 240,
-        nullptr, nullptr, instance, nullptr);
-    if (!hwnd)
+    HANDLE rawMutex = CreateMutexW(nullptr, TRUE, kSingleInstanceMutex);
+    const bool alreadyRunning = GetLastError() == ERROR_ALREADY_EXISTS;
+    winrt::handle mutex{ rawMutex };
+    if (alreadyRunning && !TakeOverFromRunningCopy(mutex.get()))
     {
+        return 1;  // the running copy didn't quit in time
+    }
+    if (quitOnly)
+    {
+        return 0;
+    }
+
+    try
+    {
+        winrt::init_apartment(winrt::apartment_type::single_threaded);
+        auto dispatcherQueue = CreateDispatcherQueueForThisThread();
+
+        IslandWindow island;
+        Tray tray;
+        if (!island.Create(instance) || !tray.Create(instance, [] { PostQuitMessage(0); }))
+        {
+            return 1;
+        }
+
+        // GetMessageW sleeps (0 % CPU) until a message arrives, and returns 0
+        // once PostQuitMessage has been called.
+        MSG msg{};
+        while (GetMessageW(&msg, nullptr, 0, 0) > 0)
+        {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+        return static_cast<int>(msg.wParam);
+    }
+    catch (const winrt::hresult_error& error)
+    {
+        MessageBoxW(nullptr, error.message().c_str(), L"Island failed to start", MB_ICONERROR);
         return 1;
     }
-    ShowWindow(hwnd, showCommand);
-
-    // The message loop. GetMessageW sleeps (0% CPU) until a message arrives,
-    // and returns 0 once PostQuitMessage has been called.
-    MSG msg{};
-    while (GetMessageW(&msg, nullptr, 0, 0) > 0)
-    {
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
-    }
-    return static_cast<int>(msg.wParam);
 }

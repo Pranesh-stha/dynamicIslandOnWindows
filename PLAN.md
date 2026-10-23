@@ -4,15 +4,17 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 
 ## 0. Current status (read this first)
 
-- **Current phase:** Phase 0 is done, except for your own debugger walkthrough. **Next: Phase 1, "The pill exists."**
-- **Last updated:** 2026-10-23 20:12 NPT (UTC+05:45)
+- **Current phase:** Phase 1 is built and verified. A few hands-on checks are left for you (see the Phase 1 list). **Next: Phase 2, "Stay out of the way."**
+- ⚠ **Until Phase 2 is done, the pill will show over fullscreen games.** Quit it from the tray icon before gaming. It doesn't start at login yet.
+- **Last updated:** 2026-10-23 20:29 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
   - §12 is the update log: what changed and when, newest first.
 - **Build:** run `cmake --preset default` once, then `cmake --build --preset debug` (or `release`).
   - The exe ends up in `build\Debug\Island.exe` or `build\Release\Island.exe`.
-  - In VS Code, F5 builds the project and starts the debugger.
+  - In VS Code, F5 closes any running island, builds the project and starts the debugger.
+  - `Island.exe --quit` closes a running island. Launching a new copy replaces the old one.
 - **Rule for every session:** after any meaningful change, add an entry at the top of the update log (§12) and refresh this section.
 
 ## 1. Goal
@@ -171,10 +173,12 @@ windowsUI/
   PLAN.md
   src/
     main.cpp                 entry point, single-instance check, message loop
+    app.manifest             DPI awareness (Per-Monitor V2), Windows 10/11
+    AppMessages.h            "Island.Quit" message shared between Island processes
     IslandWindow.*           the window: flags, placement, DPI, hit-testing
     StateMachine.*           Hidden / Idle / Peek / Expanded
     render/
-      Compositor.*           visual tree, glass material, spring animations
+      IslandVisuals.*        visual tree, glass material, spring animations
       Text.*                 DirectWrite text + Segoe Fluent Icons (built into Win 11)
       Widgets.*              button, slider, toggle, album artwork
     services/                ← anything slow runs on background threads
@@ -207,19 +211,21 @@ Each phase ends with something you can run and a **Done when** checklist.
   - ✅ `Island.exe` opens a plain window and closes cleanly (exit code 0).
   - ⬜ You put a breakpoint in `wWinMain` and step through it.
 
-### Phase 1: The pill exists
-- Borderless, transparent, topmost, no-activate tool window at the top-center of the **current primary monitor**.
-- Follow primary-monitor changes: docking and undocking, home ↔ college.
-- Per-Monitor-V2 DPI awareness, so it's sharp at both 125 % and 175 %.
-- A static pill drawn by the compositor.
-- Tray icon with Quit, and single-instance protection.
-- Reposition on monitor plug/unplug, resolution or scale changes, and Explorer restarts.
+### Phase 1: The pill exists ✅ built (2026-10-23)
+- ✅ Borderless, transparent, topmost, no-activate tool window at the top-center of the **current primary monitor** (`IslandWindow`).
+- ✅ Follows primary-monitor changes. It repositions on display, DPI and settings changes after a 250 ms settle delay.
+- ✅ Per-Monitor-V2 DPI awareness through `app.manifest`.
+- ✅ Glass pill drawn by the compositor (`IslandVisuals`): Windows' blur-behind brush, a dark tint (alpha 150), and a pill-shaped clip.
+  - Size: 200×34 DIP with a 6 DIP gap above it. The window itself reaches the top edge, so pushing the mouse up still lands on it.
+- ✅ Tray icon with a "Quit Island" menu. The tray has its own hidden window and re-adds its icon if Explorer restarts.
+- ✅ Single instance: a newer launch replaces the running one, and `--quit` closes it.
 - **Done when:**
-  - It sits exactly at top-center at the right size on either monitor.
-  - Unplugging the external monitor moves it to the laptop panel at the correct 175 % size. Plugging it back in moves it back.
-  - It's not in Alt+Tab.
-  - Clicking it doesn't take focus from your current app.
-  - RAM < 30 MB.
+  - ✅ It sits exactly at top-center at the right size. Verified on the Legion: 250×51 px at 125 %, centered (1155 px gap on each side), at the very top.
+  - ⬜ (you) Unplugging the external monitor moves it to the laptop panel at the correct 175 % size, and plugging it back in moves it back.
+  - ✅ Not in Alt+Tab or on the taskbar: the TOOLWINDOW style is set. ⬜ (you) Confirm with Alt+Tab.
+  - ✅ Launching it doesn't steal focus. ⬜ (you) Click the pill while typing somewhere: your typing should stay where it is.
+  - ✅ RAM < 30 MB: measured **1.9 MB**. The pill's visuals live in Windows' compositor (counted under `dwm.exe`), not in Island.
+  - ✅ The blur works: text behind the pill is fully blurred and the edges are smooth. Windows' blur strength is fixed; Phase 3 tunes tint, saturation, brightness and the edge highlight.
 
 ### Phase 2: Stay out of the way (game safety)
 This comes before any visual polish, so you can leave it running while gaming from early on.
@@ -273,6 +279,7 @@ This comes before any visual polish, so you can leave it running while gaming fr
 - Crash log plus automatic restart.
 - Correct state after sleep/resume, lock/unlock and GPU resets.
 - **48-hour soak test:** the memory graph stays flat and the handle count doesn't grow.
+- Polish: Island's own tray icon (currently Windows' generic app icon) and a dark-mode tray menu.
 - **Done when:** it runs for a week without you thinking about it.
 
 ### Later ideas (not committed)
@@ -428,6 +435,9 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-23 | Hide like the taskbar: anything covering the whole primary screen hides the island. No per-game list needed |
 | 2026-10-23 | Every hover, click and toggle is animated smoothly (§5, Controls); the control kit is polished in Phase 3 before any feature uses it |
 | 2026-10-23 | Build setup: CMake presets + Visual Studio 2026 generator (MSVC only), static C++ runtime, C++/WinRT headers from the Windows SDK (no NuGet) |
+| 2026-10-23 | A newer Island launch replaces the running one (instead of refusing to start); `--quit` closes it. F5 runs `--quit` before building, because a running exe can't be overwritten |
+| 2026-10-23 | The tray menu uses its own hidden window, which may be activated briefly when you click the tray icon. The island window itself is never activated |
+| 2026-10-23 | Idle pill: 200×34 DIP, floating 6 DIP below the top edge; the window reaches the top edge, so the mouse can find it by pushing up |
 | 2026-10-23 | PLAN.md keeps a status section (§0) and an update log (§12); `CLAUDE.md` tells every new chat to read it and keep it current |
 
 ## 12. Update log
@@ -436,6 +446,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-23 20:29 | **Phase 1 built.** New files: `IslandWindow.*` (window flags, top-center placement on the primary monitor, DPI, display-change handling, no-activate), `render/IslandVisuals.*` (compositor glass pill: blur-behind brush + tint + pill clip), `platform/Tray.*` (tray icon, Quit menu, Explorer-restart handling), `AppMessages.h`, `app.manifest` (Per-Monitor V2). `main.cpp` now handles single instance, replace-on-launch and `--quit`. The Phase 0 demo window was removed; it's in commit `f37f252`. **Checked (Release):** builds with no warnings; 250×51 px at the exact top-center of the Legion (125 %); always-on-top, no taskbar entry and never-takes-focus flags all set; launching doesn't steal focus; **1.9 MB RAM**; blur verified with a screenshot over a striped test pattern; a second launch replaces the first; `--quit` exits cleanly with code 0. **Not yet checked:** Debug build linking (blocked while your Phase 0 debug session was running), and the unplug/Alt+Tab/click checks for you. |
 | 2026-10-23 20:12 | **Phase 0 done** (except your debugger walkthrough). **Project setup:** Git repo (branch `main`), `.gitignore`, `CMakeLists.txt`, `CMakePresets.json` (MSVC only), `.vscode/` (F5 = build + debug) and `CLAUDE.md`. **First program** (`src/main.cpp`): a plain Win32 window that uses C++/WinRT to read the Windows version and open Settings → Display on click. **Checked:** builds with MSVC 19.50 and no warnings. The Release exe is 370 KB, runs at 13 MB RAM (Task Manager "Memory") and closes cleanly with exit code 0. |
 | 2026-10-23 ~20:05 | **Plan:** added the status section (§0), this update log and the build decisions. |
 | 2026-10-23, before 20:08 | **Requirement:** every hover, click and toggle animates smoothly. Added per-control specs (§5), the control-kit step in Phase 3, and risks D7–D10. |
