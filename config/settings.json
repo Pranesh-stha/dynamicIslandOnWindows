@@ -1,0 +1,16 @@
+// Island settings. Save this file and Island picks up the change within a
+// moment; no restart needed. "//" comments are allowed. If something here is
+// wrong, Island keeps the previous settings and writes the error to the log
+// (tray icon -> Open log).
+{
+  "games": {
+    // Exe names that always hide the island while they're the app in front.
+    // Normally empty: anything fullscreen hides it automatically. Add a game
+    // here only if the automatic detection ever misses it.
+    // Example: "blocklist": ["VALORANT-Win64-Shipping.exe"]
+    "blocklist": [],
+
+    // How long (ms) nothing may be fullscreen before the island comes back.
+    "showDelayMs": 500
+  }
+}

@@ -4,9 +4,9 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 
 ## 0. Current status (read this first)
 
-- **Current phase:** Phase 1 is built and verified. A few hands-on checks are left for you (see the Phase 1 list). **Next: Phase 2, "Stay out of the way."**
-- ⚠ **Until Phase 2 is done, the pill will show over fullscreen games.** Quit it from the tray icon before gaming. It doesn't start at login yet.
-- **Last updated:** 2026-10-23 20:29 NPT (UTC+05:45)
+- **Current phase:** Phase 2 is built and verified: the island hides for anything fullscreen on the primary monitor. **Next: Phase 3, "Motion & glass."**
+- Hands-on checks are left for you in the Phase 1 and Phase 2 lists (real games, PresentMon). It doesn't start at login yet (Phase 7).
+- **Last updated:** 2026-10-24 07:03 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
@@ -15,6 +15,8 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
   - The exe ends up in `build\Debug\Island.exe` or `build\Release\Island.exe`.
   - In VS Code, F5 closes any running island, builds the project and starts the debugger.
   - `Island.exe --quit` closes a running island. Launching a new copy replaces the old one.
+- **Tests:** `ctest --preset debug` (or `release`) runs the unit tests. `pwsh -File tests\fullscreen_test.ps1` runs the game-safety test with real windows (it clicks, so hands off the mouse for ~15 s).
+- **Log and settings:** the tray menu opens `config\settings.json` (edits apply live) and the log (`%LOCALAPPDATA%\Island\island.log`).
 - **Rule for every session:** after any meaningful change, add an entry at the top of the update log (§12) and refresh this section.
 
 ## 1. Goal
@@ -169,20 +171,22 @@ General rules:
 
 ```
 windowsUI/
-  CMakeLists.txt
+  CMakeLists.txt             Island.exe + IslandCore (shared code) + IslandTests
   PLAN.md
   src/
     main.cpp                 entry point, single-instance check, message loop
+    App.*                    owns every part and wires services to the window
     app.manifest             DPI awareness (Per-Monitor V2), Windows 10/11
     AppMessages.h            "Island.Quit" message shared between Island processes
-    IslandWindow.*           the window: flags, placement, DPI, hit-testing
+    IslandWindow.*           the window: flags, placement, DPI, hit-testing, hide/show
     StateMachine.*           Hidden / Idle / Peek / Expanded
     render/
       IslandVisuals.*        visual tree, glass material, spring animations
       Text.*                 DirectWrite text + Segoe Fluent Icons (built into Win 11)
       Widgets.*              button, slider, toggle, album artwork
     services/                ← anything slow runs on background threads
-      FullscreenWatcher.*    game / fullscreen detection
+      FullscreenWatcher.*    game / fullscreen detection (event-driven)
+      WindowClassifier.*     pure rule: normal / maximized / fullscreen (unit-tested)
       MediaService.*         now playing (GlobalSystemMediaTransportControls)
       AudioService.*         volume (Core Audio)
       BrightnessService.*    laptop (WMI) + external monitor (DDC/CI)
@@ -191,7 +195,10 @@ windowsUI/
     platform/
       Tray.*  Startup.*  Settings.*  Log.*
   config/
-    settings.json            spring values, game blocklist, monitor choice
+    settings.json            spring values, game blocklist (read live while Island runs)
+  tests/
+    UnitTests.cpp            pure-logic tests, run by ctest
+    fullscreen_test.ps1      game-safety test with real windows
 ```
 
 **Threading rule:** the UI thread owns the window and the compositor, and it never waits on anything slow. Services do their work in the background and post results back through the `DispatcherQueue`.
@@ -227,14 +234,19 @@ Each phase ends with something you can run and a **Done when** checklist.
   - ✅ RAM < 30 MB: measured **1.9 MB**. The pill's visuals live in Windows' compositor (counted under `dwm.exe`), not in Island.
   - ✅ The blur works: text behind the pill is fully blurred and the edges are smooth. Windows' blur strength is fixed; Phase 3 tunes tint, saturation, brightness and the edge highlight.
 
-### Phase 2: Stay out of the way (game safety)
+### Phase 2: Stay out of the way (game safety) ✅ built (2026-10-24)
 This comes before any visual polish, so you can leave it running while gaming from early on.
 
-- Event-driven fullscreen/game detection (see §8).
-- Really hide the window, not just make it transparent. Pause all work while hidden.
-- Ignore hover while a window is being dragged, because the Windows 11 Snap Layouts bar lives at top-center.
-- Optional exe blocklist in `settings.json`, as an escape hatch for any game the detection misses.
-- **Done when:** the test matrix in §10 passes.
+- ✅ Event-driven fullscreen/game detection (`FullscreenWatcher`, see §8). Nothing is polled: idle CPU measured at 0.0 ms over 20 s.
+- ✅ Really hides the window (`SW_HIDE`), instantly. It comes back after `showDelayMs` (500 ms) of nothing fullscreen. Phase 3+ must keep "nothing runs while hidden" true (no animations or redraws while hidden).
+- ✅ Window drags are reported (`EVENT_SYSTEM_MOVESIZESTART/END`) so hover can ignore them. Phase 3 uses this once hover exists.
+- ✅ Optional exe blocklist in `settings.json`: hides whenever a listed app is the foreground app, on any monitor.
+- ✅ `settings.json` with `//` comments, live reload, and safe fallbacks (a broken edit keeps the previous settings).
+- ✅ A log file for events (`%LOCALAPPDATA%\Island\island.log`), and tray items to open it and the settings.
+- **Done when:**
+  - ✅ Automated (`tests\fullscreen_test.ps1`, all 8 pass): hides within 20 ms for a borderless fullscreen window (limit 200 ms); comes back 507 ms after it closes; stays (slim) for a maximized window; hides 12 ms after the front window switches to fullscreen like F11; stays for fullscreen on the laptop screen; stays hidden over a fullscreen window while you click on the other monitor. Blocklist checked by hand: hid at once, back after 502 ms.
+  - ✅ 32 unit checks of the fullscreen rule and settings parsing pass.
+  - ⬜ (you) The real-game rows of the matrix in §10: Valorant, Marvel Rivals, YouTube fullscreen, VLC, plus PresentMon showing *Independent Flip* with Island running.
 
 ### Phase 3: Motion & glass (the feel)
 - Visual tree, rounded-rectangle clip geometry, and the spring morph Idle ↔ Peek ↔ Expanded.
@@ -301,8 +313,10 @@ This comes before any visual polish, so you can leave it running while gaming fr
 
 | Signal | Catches |
 |---|---|
-| AppBar `ABN_FULLSCREENAPP` notification (the same signal the taskbar uses to hide itself) | most fullscreen apps and games |
+| AppBar `ABN_FULLSCREENAPP` notification (the same signal the taskbar uses to hide itself). Used as a trigger to re-check, because on two monitors it doesn't say which screen | most fullscreen apps and games |
 | Foreground-window change events (`SetWinEventHook`, out-of-context, so no injection) → check whether that window covers its whole monitor | borderless-windowed games, F11 browser, fullscreen video |
+| The top app window *under the island's spot* (a z-order walk that skips always-on-top, tool and click-through windows, i.e. overlays) | a fullscreen video or game stays "in front" while you click something on the other monitor |
+| Move/resize/hide/close events, but only from the threads of those two windows. Tested: mouse-pointer moves are reported by a system thread, so these hooks stay quiet while you play | F11 / fullscreen-button switches with no focus change |
 | `SHQueryUserNotificationState` | exclusive-fullscreen D3D, presentation mode |
 | Optional exe blocklist, as an escape hatch | any game the checks above ever miss |
 
@@ -318,6 +332,8 @@ This comes before any visual polish, so you can leave it running while gaming fr
 - Hiding is instant. Coming back waits about 0.5 s, so alt-tabbing and loading screens don't make it flicker.
 
 **Verification:** PresentMon (a free Intel tool) shows how each game presents frames. With Island running, the game must stay on *Hardware: Independent Flip*.
+
+**How a window is classified** (`WindowClassifier`): *fullscreen* = covers the whole monitor and is not an ordinary maximized window with a title bar or resize border; *maximized* = maximized on the island's monitor. With your auto-hide taskbar a maximized window also covers the whole monitor, so the frame style is what tells them apart.
 
 ## 9. Bug & risk list
 
@@ -399,7 +415,7 @@ This comes before any visual polish, so you can leave it running while gaming fr
 
 ## 10. Testing
 
-**Game / fullscreen matrix** (run it at the end of Phase 2 and again before every "release"):
+**Game / fullscreen matrix** (run it at the end of Phase 2 and again before every "release"). `tests\fullscreen_test.ps1` automates the generic rows with real test windows; the game rows need you:
 
 | Scenario | Expected |
 |---|---|
@@ -439,6 +455,11 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-23 | The tray menu uses its own hidden window, which may be activated briefly when you click the tray icon. The island window itself is never activated |
 | 2026-10-23 | Idle pill: 200×34 DIP, floating 6 DIP below the top edge; the window reaches the top edge, so the mouse can find it by pushing up |
 | 2026-10-23 | PLAN.md keeps a status section (§0) and an update log (§12); `CLAUDE.md` tells every new chat to read it and keep it current |
+| 2026-10-24 | Fullscreen detection looks at the foreground window *and* the top app window under the island's spot (overlays skipped). The taskbar's `ABN_FULLSCREENAPP` only triggers a re-check, since on two monitors it doesn't say which screen |
+| 2026-10-24 | The blocklist hides the island whenever a listed exe is the foreground app, on either monitor (it's an escape hatch, so it errs on hiding) |
+| 2026-10-24 | `settings.json` is read from next to `Island.exe`, else from the repo's `config\` folder (builds made from the repo). `//` comments allowed; edits apply live; a broken edit keeps the previous settings |
+| 2026-10-24 | A small event log at `%LOCALAPPDATA%\Island\island.log`, rewritten at each start and capped at 2 MB |
+| 2026-10-24 | Code is split into `IslandCore` (a static library) + `Island.exe`, so `IslandTests` can test the same code; tests run with `ctest` |
 
 ## 12. Update log
 
@@ -446,6 +467,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 07:03 | **Phase 2 built.** New: `services/FullscreenWatcher.*` (foreground + under-the-island window, scoped move/resize hooks, taskbar `ABN_FULLSCREENAPP`, `SHQueryUserNotificationState`, blocklist), `services/WindowClassifier.*`, `platform/Settings.*` (settings.json, live reload), `platform/Log.*`, `App.*`, `config/settings.json`, `tests/UnitTests.cpp`, `tests/fullscreen_test.ps1`. `IslandWindow` now hides instantly and shows after the delay; the tray menu opens settings and the log. **Checked:** Release and Debug build with no warnings; 32 unit checks pass; all 8 checks of `fullscreen_test.ps1` pass (hide 0–12 ms, show after 507 ms); blocklist hides at once; a broken settings edit keeps the old settings; **idle CPU 0.0 ms over 20 s, 2.0 MB RAM, handle count steady**. Found and fixed: the log file was locked while Island ran. Experiment: cursor-move events are reported by a system thread, not the thread that moved the pointer, so the thread-scoped hooks stay quiet during games. **Not yet checked:** real games and PresentMon (you). |
 | 2026-10-23 20:29 | **Phase 1 built.** New files: `IslandWindow.*` (window flags, top-center placement on the primary monitor, DPI, display-change handling, no-activate), `render/IslandVisuals.*` (compositor glass pill: blur-behind brush + tint + pill clip), `platform/Tray.*` (tray icon, Quit menu, Explorer-restart handling), `AppMessages.h`, `app.manifest` (Per-Monitor V2). `main.cpp` now handles single instance, replace-on-launch and `--quit`. The Phase 0 demo window was removed; it's in commit `f37f252`. **Checked (Release):** builds with no warnings; 250×51 px at the exact top-center of the Legion (125 %); always-on-top, no taskbar entry and never-takes-focus flags all set; launching doesn't steal focus; **1.9 MB RAM**; blur verified with a screenshot over a striped test pattern; a second launch replaces the first; `--quit` exits cleanly with code 0. **Not yet checked:** Debug build linking (blocked while your Phase 0 debug session was running), and the unplug/Alt+Tab/click checks for you. |
 | 2026-10-23 20:12 | **Phase 0 done** (except your debugger walkthrough). **Project setup:** Git repo (branch `main`), `.gitignore`, `CMakeLists.txt`, `CMakePresets.json` (MSVC only), `.vscode/` (F5 = build + debug) and `CLAUDE.md`. **First program** (`src/main.cpp`): a plain Win32 window that uses C++/WinRT to read the Windows version and open Settings → Display on click. **Checked:** builds with MSVC 19.50 and no warnings. The Release exe is 370 KB, runs at 13 MB RAM (Task Manager "Memory") and closes cleanly with exit code 0. |
 | 2026-10-23 ~20:05 | **Plan:** added the status section (§0), this update log and the build decisions. |

@@ -9,7 +9,6 @@ namespace
     constexpr wchar_t kClassName[] = L"Island.Tray";
     constexpr UINT kTrayCallbackMessage = WM_APP + 1;
     constexpr UINT kIconId = 1;
-    constexpr UINT kCommandQuit = 1;
 }
 
 Tray::~Tray()
@@ -21,9 +20,9 @@ Tray::~Tray()
     }
 }
 
-bool Tray::Create(HINSTANCE instance, std::function<void()> onQuit)
+bool Tray::Create(HINSTANCE instance, std::function<std::vector<TrayItem>()> buildMenu)
 {
-    m_onQuit = std::move(onQuit);
+    m_buildMenu = std::move(buildMenu);
 
     // Explorer broadcasts this when it (re)starts; the icon then has to be added again.
     m_taskbarCreatedMessage = RegisterWindowMessageW(L"TaskbarCreated");
@@ -94,10 +93,21 @@ LRESULT CALLBACK Tray::WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM
 
 void Tray::ShowMenu(POINT anchor)
 {
+    const std::vector<TrayItem> items = m_buildMenu();
     HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Island (Phase 1)");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kCommandQuit, L"Quit Island");
+    for (size_t i = 0; i < items.size(); ++i)
+    {
+        const TrayItem& item = items[i];
+        if (item.separator)
+        {
+            AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+        }
+        else
+        {
+            // Menu command ids start at 1, because 0 means "nothing chosen".
+            AppendMenuW(menu, MF_STRING | (item.onClick ? 0 : MF_GRAYED), i + 1, item.text.c_str());
+        }
+    }
 
     // Needed so the menu closes when you click elsewhere. This activates only
     // the tray's hidden window, and only because you clicked the tray icon.
@@ -108,8 +118,8 @@ void Tray::ShowMenu(POINT anchor)
         anchor.x, anchor.y, m_hwnd, nullptr));
     DestroyMenu(menu);
 
-    if (command == kCommandQuit && m_onQuit)
+    if (command >= 1 && command <= items.size() && items[command - 1].onClick)
     {
-        m_onQuit();
+        items[command - 1].onClick();
     }
 }

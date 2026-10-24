@@ -13,5 +13,9 @@
   "buildPresets": [
     { "name": "debug", "displayName": "Debug", "configurePreset": "default", "configuration": "Debug" },
     { "name": "release", "displayName": "Release", "configurePreset": "default", "configuration": "Release" }
+  ],
+  "testPresets": [
+    { "name": "debug", "configurePreset": "default", "configuration": "Debug", "output": { "outputOnFailure": true } },
+    { "name": "release", "configurePreset": "default", "configuration": "Release", "output": { "outputOnFailure": true } }
   ]
 }

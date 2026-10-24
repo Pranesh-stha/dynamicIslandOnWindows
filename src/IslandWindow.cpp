@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "AppMessages.h"
+#include "platform/Log.h"
 
 namespace
 {
@@ -19,6 +20,9 @@ namespace
     // until they settle before repositioning.
     constexpr UINT_PTR kPlacementTimer = 1;
     constexpr UINT kPlacementDelayMs = 250;
+
+    // Fires once fullscreen has been gone for the show delay.
+    constexpr UINT_PTR kShowTimer = 2;
 
     template <typename T>
     void SetDwmAttribute(HWND hwnd, DWMWINDOWATTRIBUTE attribute, T value)
@@ -66,8 +70,60 @@ bool IslandWindow::Create(HINSTANCE instance)
 
     m_visuals.Initialize(m_hwnd);
     PlaceOnPrimaryMonitor();
-    ShowWindow(m_hwnd, SW_SHOWNOACTIVATE);
     return true;
+}
+
+void IslandWindow::SetFullscreenHidden(bool hidden, bool immediately)
+{
+    KillTimer(m_hwnd, kShowTimer);
+    if (hidden)
+    {
+        // Really hidden, not just transparent: any visible window on top of a
+        // borderless game makes Windows compose the screen, which costs the
+        // game FPS and adds input lag.
+        if (!m_hidden)
+        {
+            ShowWindow(m_hwnd, SW_HIDE);
+            m_hidden = true;
+            Log::Info(L"island hidden");
+        }
+    }
+    else if (m_hidden)
+    {
+        // Coming back waits a moment, so alt-tab and loading screens don't
+        // make the island flicker.
+        if (immediately || m_showDelayMs == 0)
+        {
+            ShowNow();
+        }
+        else
+        {
+            SetTimer(m_hwnd, kShowTimer, static_cast<UINT>(m_showDelayMs), nullptr);
+        }
+    }
+}
+
+void IslandWindow::ShowNow()
+{
+    // Re-assert "always on top" only here, on our own state change, never in
+    // a loop, so we don't fight other always-on-top windows.
+    SetWindowPos(m_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    m_hidden = false;
+    Log::Info(L"island shown");
+}
+
+void IslandWindow::SetSlim(bool slim)
+{
+    if (slim != m_slim)
+    {
+        m_slim = slim;
+        Log::Info(L"island {}", slim ? L"slim (maximized window under it)" : L"pill");
+    }
+}
+
+void IslandWindow::SetWindowDragActive(bool active)
+{
+    m_windowDragActive = active;
 }
 
 LRESULT CALLBACK IslandWindow::WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -107,6 +163,12 @@ LRESULT IslandWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPAR
         {
             KillTimer(hwnd, kPlacementTimer);
             PlaceOnPrimaryMonitor();
+            return 0;
+        }
+        if (wParam == kShowTimer)
+        {
+            KillTimer(hwnd, kShowTimer);
+            ShowNow();
             return 0;
         }
         break;

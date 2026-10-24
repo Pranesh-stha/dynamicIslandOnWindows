@@ -4,7 +4,7 @@
 //   1. Make sure only one Island runs. A newer launch replaces the older one,
 //      and "Island.exe --quit" just closes the running one.
 //   2. Prepare this thread for WinRT and the compositor.
-//   3. Create the island window and the tray icon.
+//   3. Start the app: island window, tray icon, watchers (see App.cpp).
 //   4. Run the message loop until "Quit Island" is chosen.
 
 #include <windows.h>
@@ -16,9 +16,10 @@
 
 #include <string_view>
 
+#include "App.h"
 #include "AppMessages.h"
 #include "IslandWindow.h"
-#include "platform/Tray.h"
+#include "platform/Log.h"
 
 namespace
 {
@@ -66,12 +67,12 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR comm
 
     try
     {
+        Log::Init();
         winrt::init_apartment(winrt::apartment_type::single_threaded);
         auto dispatcherQueue = CreateDispatcherQueueForThisThread();
 
-        IslandWindow island;
-        Tray tray;
-        if (!island.Create(instance) || !tray.Create(instance, [] { PostQuitMessage(0); }))
+        App app;
+        if (!app.Start(instance))
         {
             return 1;
         }
@@ -84,6 +85,7 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR comm
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        Log::Info(L"quitting");
         return static_cast<int>(msg.wParam);
     }
     catch (const winrt::hresult_error& error)

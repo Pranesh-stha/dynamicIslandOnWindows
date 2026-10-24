@@ -17,7 +17,21 @@ public:
     IslandWindow& operator=(const IslandWindow&) = delete;
     ~IslandWindow();
 
+    // Creates the window hidden; call SetFullscreenHidden to show it.
     bool Create(HINSTANCE instance);
+
+    // Something fullscreen covers the primary monitor. Hiding is instant;
+    // showing waits `showDelayMs` unless `immediately` is set.
+    void SetFullscreenHidden(bool hidden, bool immediately = false);
+    void SetShowDelay(int showDelayMs) { m_showDelayMs = showDelayMs; }
+
+    // A maximized window is under the island.
+    void SetSlim(bool slim);
+
+    // The user is dragging or resizing some window.
+    void SetWindowDragActive(bool active);
+
+    HWND Handle() const { return m_hwnd; }
 
 private:
     static LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam);
@@ -25,7 +39,12 @@ private:
 
     void PlaceOnPrimaryMonitor();
     void SchedulePlacement();
+    void ShowNow();
 
     HWND m_hwnd{};
     IslandVisuals m_visuals;
+    bool m_hidden = true;
+    bool m_slim = false;
+    bool m_windowDragActive = false;
+    int m_showDelayMs = 500;
 };
