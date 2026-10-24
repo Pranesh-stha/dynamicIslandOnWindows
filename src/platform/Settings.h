@@ -23,8 +23,9 @@ struct LayoutSettings
     float slimHeight = 4.0f;
     float peekWidth = 340.0f;   // hover
     float peekHeight = 56.0f;
-    float panelWidth = 400.0f;  // click: the control center (its height follows its content)
-    float panelRadius = 28.0f;
+    float panelWidth = 1180.0f; // click: the control center (its height follows its content)
+    float panelMargin = 80.0f;  // the control center keeps at least this far from the screen's sides
+    float panelRadius = 30.0f;
 };
 
 struct GlassSettings

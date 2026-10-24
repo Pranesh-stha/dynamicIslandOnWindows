@@ -4,10 +4,10 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 
 ## 0. Current status (read this first)
 
-- **Current phase:** Phases 2–5 are built and verified. The island hides for games, morphs on glass, shows now playing, and its control center has volume, brightness for both displays, Wi-Fi and Bluetooth. **Next: Phase 6, "Displays."**
-- Hands-on checks are left for you in the Phase 1–5 lists (real games and PresentMon, how the motion *feels*, dragging the sliders, toggling Wi-Fi/Bluetooth). It doesn't start at login yet (Phase 7).
-- ⚠ Two crashes were found and fixed on 2026-10-24 (§12): an Island crash on an empty media object, and **DWM (the Windows compositor) crashing** when a rebuilt panel released objects with springs still running. If your screen went black for a few seconds around 08:15–08:20, that was it.
-- **Last updated:** 2026-10-24 08:35 NPT (UTC+05:45)
+- **Current phase:** Phases 2–5 and **5b (the wide control center you asked for)** are built and verified. The island hides for games, morphs on glass and shows now playing. Its control center is now wide and short: time/date/battery, now playing, volume + a per-app mixer, brightness for both displays, and Wi-Fi/Bluetooth with lists to switch networks and connect, disconnect or pair devices. **Next: Phase 6, "Displays."**
+- Hands-on checks are left for you in the Phase 1–5b lists (real games and PresentMon, how the motion *feels*, dragging the sliders, toggling Wi-Fi/Bluetooth, joining a network, connecting headphones). It doesn't start at login yet (Phase 7).
+- ⚠ Two crashes were found and fixed on 2026-10-24 (§12): an Island crash on an empty media object, and **DWM (the Windows compositor) crashing** when a rebuilt panel released objects with springs still running. None since.
+- **Last updated:** 2026-10-24 12:58 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
@@ -16,7 +16,7 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
   - The exe ends up in `build\Debug\Island.exe` or `build\Release\Island.exe`.
   - In VS Code, F5 closes any running island, builds the project and starts the debugger.
   - `Island.exe --quit` closes a running island. Launching a new copy replaces the old one.
-- **Tests:** `ctest --preset debug` (or `release`) runs the unit tests; `build\Release\IslandTests.exe --hardware` also checks the real volume and brightness (it moves them 1 % and back). `pwsh -File tests\fullscreen_test.ps1` runs the game-safety test with real windows (it clicks its own test windows, so hands off the mouse for ~15 s). `pwsh -File tests\visual_check.ps1` takes screenshots and measures the morphs *hands-free* (no mouse, no focus change). `pwsh -File tests\media_test.ps1` plays a silent test track to check now playing (your own music is never touched).
+- **Tests:** `ctest --preset debug` (or `release`) runs the unit tests; `build\Release\IslandTests.exe --hardware` also checks the real volume, brightness and mixer (it moves them 1 % and back) and lists the battery, Wi-Fi networks and Bluetooth devices (read only). `pwsh -File tests\fullscreen_test.ps1` runs the game-safety test with real windows (it clicks its own test windows, so hands off the mouse for ~15 s). `pwsh -File tests\visual_check.ps1` takes screenshots and measures the morphs *hands-free* (no mouse, no focus change). `pwsh -File tests\media_test.ps1` plays a silent test track to check now playing (your own music is never touched).
 - **Poses:** `Island.exe --pose idle|peek|expanded|demo` holds the island in one state (for screenshots); tray → "Keep open (for tuning)" does the same while you edit settings.
 - **Log and settings:** the tray menu opens `config\settings.json` (edits apply live) and the log (`%LOCALAPPDATA%\Island\island.log`).
 - **Rule for every session:** after any meaningful change, add an entry at the top of the update log (§12) and refresh this section.
@@ -128,12 +128,33 @@ There is no setting to change; it just follows the primary monitor. With a colle
 
 **Over maximized windows (decided):** when the window in front is maximized on the island's monitor, the pill shrinks to a slim glass line (about 4 px) so it doesn't cover tabs or title bars. The line touches the very top edge of the screen. Because the cursor stops at that edge, the line is easy to hit even though it's thin. Hovering still opens it.
 
-**Expanded panel (draft):**
+**Expanded panel (decided 2026-10-24: wide and short).** Idle and Peek stay small. The control center opens *wide*: up to 1180 DIP, always leaving at least 80 DIP of screen on each side (`layout.panelWidth` / `panelMargin`).
 
-- Now playing: artwork, title/artist, ⏮ ⏯ ⏭ and a progress bar.
-- Sliders: volume, and brightness for each monitor.
-- Toggles: Wi-Fi and Bluetooth. Right-click opens the matching Settings page.
-- Displays: a list of connected monitors. Clicking one opens Settings → Display.
+```
+┌────────────────────────────────────────────────────────────────────────────────────┐
+│ 12:30                                                       🔋 77 %                 │
+│ Saturday, 24 October                                        Plugged in              │
+│────────────────────────────────────────────────────────────────────────────────────│
+│ NOW PLAYING            │ SOUND               │ DISPLAYS       │ CONNECTIONS          │
+│ ┌────┐ Title           │ Headphones          │ Legion 27Q-10  │ [Wi-Fi      ● on ]   │
+│ │art │ Artist          │ 🔊 ━━━━━━━━━○──     │ ☀ ━━━━━━━━━○   │ [Bluetooth  ● on ]   │
+│ └────┘ Spotify         │ Brave               │ Built-in       │  📶 Home   Connected │
+│ ━━━━━━━━━━━━━━━━━━━━   │ 🔊 ━━━━━━━━○───     │ ☀ ━━━━○─────   │  📶 Cafe   Secured 🔒│
+│    ⏮    ⏯    ⏭        │ System sounds  ...  │                │  ⋯ More networks  >  │
+│                        │                     │                │  ⚙ Wi-Fi settings >  │
+└────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Header:** time and date (your locale's format), battery % with its icon, and "Charging · 45 min to full" / "2 h 10 min left" / "Plugged in".
+- **Now playing:** artwork, title/artist/app (click the app name to switch apps), ⏮ ⏯ ⏭ and a progress bar.
+- **Sound:** the main volume (caption = output device) and a **mixer**: one slider per app playing sound (up to 4 rows; an app keeps its row while it plays, so sliders never swap under the mouse). Click an icon to mute.
+- **Displays:** a brightness slider per monitor.
+- **Connections:** Wi-Fi and Bluetooth tiles. The switch turns the radio on/off; clicking the rest of the tile shows its list below:
+  - **Wi-Fi:** networks in range (connected → saved → strongest). Click one to join. Saved and open networks connect directly. A new password-protected network opens Windows' own Wi-Fi list, because the island can't take keyboard focus to type a password (see §11).
+  - **Bluetooth:** paired devices (connected → headphones/speakers → name). Click headphones or speakers to connect/disconnect. Other devices (mice, keyboards, phones) open Settings → Bluetooth, since Windows connects those itself.
+  - **Add a device:** searches for new devices only while this list is shown; click one to pair (PIN confirmations appear in the row; anything that needs typing opens Windows' pairing dialog).
+  - Longer lists page: the last row becomes "More networks / More devices".
+- Right-click on any slider, tile or row opens the matching Settings page.
 
 **Motion rules (the "Apple feel"):**
 
@@ -192,15 +213,21 @@ windowsUI/
     views/                   what each state shows (one layer each)
       IdleView.*  PeekView.*  ControlCenter.*  ControlKitDemo.*
       Actions.h              what the views' buttons ask the app to do
+      sections/              the control center's parts: header + 4 columns
+        Section.h            base class + SliderRow
+        StatusSection.*  NowPlayingSection.*  SoundSection.*  DisplaysSection.*  ConnectionsSection.*
     services/                ← anything slow runs on background threads
       FullscreenWatcher.*    game / fullscreen detection (event-driven)
       MediaState.*           what's playing + pure rules: which app, app names, position, artwork decoding
       WindowClassifier.*     pure rule: normal / maximized / fullscreen (unit-tested)
       MediaService.*         now playing (GlobalSystemMediaTransportControls), events -> UI thread
-      AudioService.*         volume + mute of the default output (Core Audio), follows device changes
+      AudioService.*         volume + mute of the default output and the per-app mixer (Core Audio), follows device changes
       BrightnessService.*    laptop (WMI) + external monitor (DDC/CI) on one worker thread
       Throttle.h             newest-value-wins, rate-limited hardware writes (unit-tested)
-      RadioService.*         Wi-Fi / Bluetooth (Windows.Devices.Radios) + Wi-Fi network name
+      RadioService.*         Wi-Fi / Bluetooth on/off (Windows.Devices.Radios) + Wi-Fi network name
+      WifiService.*          networks in range, scan, join / disconnect (Windows.Devices.WiFi)
+      BluetoothService.*     paired + nearby devices (DeviceWatcher), connect audio devices, pair
+      PowerService.*         battery %, charging, time left / to full (PowerManager, Battery)
       DisplayService.*       connected monitors, open Settings pages
     platform/
       Tray.*  Startup.*  Settings.*  Log.*
@@ -298,6 +325,22 @@ This comes before any visual polish, so you can leave it running while gaming fr
   - ✅ `IslandTests --hardware`: a volume change made outside Island reaches it; brightness writes reach both displays (set 99 %/51 %, read back the same), all restored afterwards.
   - ✅ 135 checks pass (incl. `Throttle`); RAM 33.7 MB, idle CPU 0.0 ms over 30 s, handles steady. Launching Island 5× after the fix: no DWM crash (before: 4 of 7).
   - ⬜ (you) The sliders *feel* instant while dragging (brightness hardware lags behind on purpose); volume keys and Quick Settings move the island's sliders; toggle Wi-Fi/Bluetooth (I didn't, since that would have cut your connection).
+
+### Phase 5b: Wide control center ✅ built (2026-10-24, your redesign request)
+You asked for: a wide, horizontal control center (with a margin on both sides) instead of the tall square one; the Wi-Fi networks to switch between; Bluetooth devices to pair, connect and disconnect; date, time and battery; and a per-app volume mixer. Idle and Peek were already right and are unchanged.
+
+- ✅ **Layout** (§5): header (time, date, battery) over four columns: Now playing · Sound · Displays · Connections. Up to 1180 DIP wide, at least 80 DIP from each screen edge, 30 DIP corners. On your Legion it is 1476×486 px (was 400 DIP wide and taller than wide).
+- ✅ **Status** (`StatusSection`, `PowerService`): clock in your locale's format, updated once a minute only while the panel is open; battery % and icon; "Charging · 45 min to full", "2 h 10 min left", "Plugged in" (yours: 77 %, plugged in, not charging, which is likely Lenovo's battery-saving charge limit), "· Energy saver".
+- ✅ **Mixer** (`AudioService`, `SoundSection`): one slider per app with sound on the current output (an app's sessions merged; games' `-Win64-Shipping` names cleaned up; "System sounds" last). Click the icon to mute an app. Up to 4 apps; rows stay put while apps come and go.
+- ✅ **Wi-Fi list** (`WifiService`): networks in range, one row per name with the strongest signal; scans when the list opens and every 10 s while it's on screen (never while closed). Click to join (see §5 for passwords).
+- ✅ **Bluetooth list** (`BluetoothService`): paired devices from an always-on, event-driven device watcher; headphones/speakers connect and disconnect from the island (the same "reconnect"/"disconnect" request Windows' own Bluetooth page sends to the audio driver); "Add a device" searches only while shown and pairs with a click.
+- ✅ Wi-Fi/Bluetooth tiles sit side by side: the round icon turns the radio on/off (like macOS), the tile shows its list. Long lists page with a "More…" row.
+- **Done when:**
+  - ✅ Release and Debug build with no warnings; 162 unit checks pass (new: Wi-Fi grouping, mixer grouping and row assignment, game exe names, Bluetooth device kinds and order, list paging, battery text and icon).
+  - ✅ `IslandTests --hardware` (171 checks): Brave's mixer volume set to 99 % and read back by a fresh reader, then restored; Wi-Fi scan: 9 networks; 7 paired Bluetooth devices, 3 that Island can connect (Living Room speaker, Galaxy Buds, Galaxy Watch). Nothing was switched, joined, connected or paired.
+  - ✅ Hands-free screenshots: the full panel, the Wi-Fi list (with "Looking for networks…", then 6 networks paged 1–3), the Bluetooth list (Living Room speaker connected, AirPods, Galaxy Buds, "More devices 1–3 of 7", "Add a device").
+  - ✅ RAM 32.9 MB (Task Manager "Memory"); handles steady (547 → 547 over 30 s). Idle CPU: 0–94 ms per 2 minutes (one 15.6 ms scheduler tick at a time, ≤ 0.08 % of one core; Task Manager shows 0 %), on a Windows thread-pool thread. None of Island's own threads run, and no service reports anything while idle. Phase 5 measured a flat 0.0; the difference is Windows-side (to recheck in the Phase 7 soak).
+  - ⬜ (you) Join another Wi-Fi network, connect/disconnect your Galaxy Buds or AirPods, pair something new, drag an app's slider in the mixer while it plays. I didn't, because it would have cut your connection or your audio.
 
 ### Phase 6: Displays
 - List connected monitors by friendly name.
@@ -423,6 +466,11 @@ This comes before any visual polish, so you can leave it running while gaming fr
 | E9 | Constant writes wear the monitor's settings memory | DDC/CI writes are stored in the monitor | A few writes per second at most, plus the final value on release |
 | E10 | Wi-Fi name shows blank | Windows 11 24H2+ needs Location permission to read Wi-Fi names | Show "Connected" when permission is denied |
 | E11 | Bluetooth toggle missing or wrong | Adapter disabled, or airplane mode on | Show the real state, never a fake one |
+| E13 | Bluetooth list slow to fill | On your PC Windows takes exactly 30 s to say a Bluetooth device list is *complete* (every query, even the simplest) | Devices are shown as they arrive (all 9 within 1 s); nothing waits for "complete". Audio-device lookups are merged so a burst of devices costs one lookup |
+| E14 | Can't type a Wi-Fi password into the island | The island never takes keyboard focus (it would steal it from games) | Saved and open networks join directly; new secured networks open Windows' own Wi-Fi list (`ms-availablenetworks:`) |
+| E15 | "Connect" does nothing for a mouse or phone | Windows has no public "connect" call for Bluetooth; Island sends the audio driver's reconnect/disconnect request, which only headphones and speakers have | Only audio devices get connect/disconnect; others open Settings → Bluetooth |
+| E16 | Mixer sliders swap places under the mouse | Apps start and stop sound all the time | An app keeps its row while it has a session; rows aren't reassigned during a drag |
+| E17 | An app vanishes from the mixer after pausing | Browsers close their audio stream a while after a video pauses (Windows' own mixer drops it too) | Expected; it comes back when the app plays again |
 
 ### F. Lifecycle & reliability
 | # | What could go wrong | Why | Prevention |
@@ -493,6 +541,13 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-24 | Brightness: DDC/CI through the low-level VCP calls (no slow capabilities query), max 4 writes/s; WMI for the laptop panel, max 10/s; both re-read when the panel opens instead of listening to WMI events |
 | 2026-10-24 | Volume slider shows 0 while muted; dragging it up unmutes (like Windows) |
 | 2026-10-24 | Tests never click anything but their own windows; visual and media tests are hands-free (poses, silent test player) |
+| 2026-10-24 | **Control center is wide and short** (your request): up to 1180 DIP, ≥ 80 DIP from each screen edge (`layout.panelWidth`, `panelMargin`), header + 4 columns. Idle and Peek unchanged |
+| 2026-10-24 | Wi-Fi passwords are never typed into the island (no keyboard focus, ever): new secured networks open Windows' Wi-Fi list |
+| 2026-10-24 | Bluetooth connect/disconnect only for audio devices, via the audio driver's one-shot reconnect/disconnect request (`KSPROPSETID_BtAudio`), the same path Windows Settings uses; no handles to other processes |
+| 2026-10-24 | Scanning is tied to what's on screen: Wi-Fi scans only while its list is open (≥ 8 s apart), Bluetooth discovery only while "Add a device" is open; the paired-device watcher is event-driven and always on |
+| 2026-10-24 | Tiles side by side, macOS-style: the round icon toggles the radio, the rest of the tile picks the list below |
+| 2026-10-24 | Mixer shows up to 4 apps (playing first, "System sounds" last); app names come from the session or the exe file name (Toolhelp snapshot, never a process handle) |
+| 2026-10-24 | The test backdrop is click-through (layered + transparent), so a stray click during a hands-free test reaches your window |
 
 ## 12. Update log
 
@@ -500,6 +555,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 12:55 | **Phase 5b: wide control center** (your request: wide and horizontal, Wi-Fi/Bluetooth lists, date/time/battery, per-app mixer). New: `views/sections/*` (the control center split into a header and four columns), `services/WifiService.*`, `services/BluetoothService.*`, `services/PowerService.*`; `AudioService` gained the mixer; widgets gained `ListRow`, compact side-by-side `ToggleTile`s and two-line labels; settings `panelWidth` 1180, new `panelMargin` 80, `panelRadius` 30. **Checked:** Release and Debug build with no warnings; 162 unit checks; `--hardware` 171 checks (mixer 1 % and back on Brave, Wi-Fi scan 9 networks, 7 Bluetooth devices listed; nothing switched or connected); hands-free screenshots of the panel and both lists; 32.9 MB RAM, handles steady, idle CPU ≤ 0.08 % of one core (Windows thread-pool ticks; none of Island's threads); no Island/DWM crashes in the event log. **Found and fixed while testing:** Windows takes 30 s to finish *any* Bluetooth device query on your PC (devices arrive in < 1 s, so nothing waits for the end anymore); a Wi-Fi scan asked for before the adapter was ready was dropped; the Connections column made the panel ~60 px taller than needed (tiles now side by side); long video titles were cut after one line (now two); only 4 of your 7 Bluetooth devices were reachable (lists page now, and headphones/speakers sort first); the selected tile was hard to see. Also: the test backdrop now lets clicks through. Note: your taskbar auto-hides, and Brave going fullscreen correctly hid the island several times during testing. |
 | 2026-10-24 08:35 | **Phase 5 built.** New: `services/AudioService.*`, `services/BrightnessService.*`, `services/RadioService.*`, `services/Throttle.h`; the control center gained volume, brightness per display and the Wi-Fi/Bluetooth tiles; right-click opens Settings pages; `IslandTests --hardware`. **Checked:** Release and Debug build with no warnings; 135 checks pass (incl. 1 %-and-back hardware checks on both displays and the volume); the hands-free visual and media tests pass; 33.7 MB RAM, 0.0 ms idle CPU over 30 s. **Two crashes found in Windows' event log and fixed.** (1) `Island.exe` access violation on 08:04 (during a Phase 4 media test): I rebuilt that exact version, mapped the crash dump's address with a linker map → `MediaService::ReadPlayback` calling into an *empty* object Windows returned while the test player's session started. Every media/network object is now null-checked (E12). (2) **`dwm.exe` crashed 5 times (08:15–08:20)** when the Phase 5 build started: with Microsoft's public symbols the crash is in DWM's spring code (`CNaturalAnimation::SampleInitialValueAndFinalValueIfNecessary`). Cause: the control center was rebuilt right after its hidden sliders/toggles had started springs. Fix: hidden content never animates; replaced layers are released 3 s later (D11). After the fix: 5 launches + all test runs, 0 crashes. Also: Wi-Fi said "Not connected" when Windows hides the name (now "Connected"); a browser replacing its media session no longer makes the island jump to another app. |
 | 2026-10-24 08:06 | **Phase 4 built.** New: `services/MediaService.*`, `services/MediaState.*` (session picking, app names, position, artwork decoding), `views/ControlCenter.*`, `views/Actions.h`, widgets `Artwork`, `ProgressBar`, `TextButton`; idle and Peek views show media; a click now opens the control center (the demo moved to the tray only); `tests/media_test.ps1`, `tests/TestHelpers.cs` (backdrop shrunk to 1000×620). **Checked:** builds with no warnings; 119 unit checks pass; your Spotify session renders with artwork; the silent test player is picked up within ~0.1 s of playing and released correctly; 31 MB RAM, 0.0 ms idle CPU. Found and fixed: `small` is a Windows macro; paused apps flip-flopped as Windows reshuffled its "current" session (now sticky); browser metadata updates stole the island from the app you'd just started (only play-starts count now); a missed event could leave another app's "playing" state stale (re-read on every sync, plus one follow-up look after each change notice). Note: a test run held the island in Peek over your browser's toolbar and caught one of your clicks there. Tests with poses now run as rarely as possible. |
 | 2026-10-24 07:47 | **Phase 3 built.** New: `StateMachine.*`, `render/Graphics.*`, `render/Effects.*`, `render/Motion.*`, `render/Widgets.*`, `render/Glyphs.h`, `views/*` (idle, Peek placeholder, control kit demo), `tests/visual_check.ps1`; `IslandWindow` and `IslandVisuals` rewritten; settings gained `layout`, `glass` and `motion`; tray gained "Control kit demo" and "Keep open (for tuning)"; `--pose`. **Checked:** Release and Debug build with no warnings; 93 unit checks pass; `fullscreen_test.ps1` 8/8 again (slim line 5 px tall); hands-free visual check: screenshots of idle, Peek, control center, demo; morphs ~200–225 ms, 2–4 px overshoot, a reversal never jumps; **25 MB RAM, 0.0 ms idle CPU**. Found and fixed: the compositor refuses the colour-matrix effect unless all its properties are given; `RoundRect`/`DrawText` names clash with old Windows functions; a queued hover timer could open Peek after a window drag; your grey accent made "on" invisible. ⚠ A mouse-driven test run once found its test window behind your Chrome and clicked ~10 times near the middle of the primary screen before I added the "only click our own windows" guard. Those clicks may have landed in your Chrome window, so please check it. Tests that click now refuse to click anything but their own windows, and the visual test no longer clicks at all. **Not yet checked:** the feel by hand, and "transparency effects off" (it would change your desktop). |

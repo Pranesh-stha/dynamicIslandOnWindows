@@ -1,8 +1,8 @@
 // Helpers shared by the hands-free test scripts (visual_check.ps1,
 // media_test.ps1). Loaded with Add-Type; see LoadTestHelpers in those scripts.
 //
-// The test backdrop is an always-on-top window that is never activated, so
-// it doesn't take your focus. Poses switch the island's state with the
+// The test backdrop is an always-on-top window that is never activated and
+// lets clicks through to whatever is under it, so it doesn't get in your way. Poses switch the island's state with the
 // "Island.Pose" message instead of moving your mouse.
 
 using System;
@@ -36,9 +36,10 @@ public static class Visual
     [DllImport("user32")] static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr c);
     [DllImport("user32")] public static extern int GetSystemMetrics(int i);
+    [DllImport("user32")] static extern bool SetLayeredWindowAttributes(IntPtr h, uint key, byte alpha, uint flags);
     [DllImport("kernel32")] static extern IntPtr GetModuleHandle(string n);
 
-    const uint WS_EX_TOPMOST = 0x8, WS_EX_TOOLWINDOW = 0x80, WS_EX_NOACTIVATE = 0x08000000;
+    const uint WS_EX_TOPMOST = 0x8, WS_EX_TRANSPARENT = 0x20, WS_EX_TOOLWINDOW = 0x80, WS_EX_LAYERED = 0x80000, WS_EX_NOACTIVATE = 0x08000000;
     static WndProc s_proc = Proc;
     static IntPtr s_window;
     public static int Width = 1000, Height = 620;
@@ -80,7 +81,9 @@ public static class Visual
             var wc = new WNDCLASSEX { cbSize = (uint)Marshal.SizeOf(typeof(WNDCLASSEX)), proc = s_proc, inst = GetModuleHandle(null), cls = "IslandBackdrop" };
             RegisterClassEx(ref wc);
             int x = (GetSystemMetrics(0) - Width) / 2;
-            s_window = CreateWindowEx(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, "IslandBackdrop", "Island backdrop", 0x80000000, x, 0, Width, Height, IntPtr.Zero, IntPtr.Zero, wc.inst, IntPtr.Zero);
+            // Layered + transparent: fully opaque to the eye, invisible to the mouse.
+            s_window = CreateWindowEx(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_LAYERED | WS_EX_TRANSPARENT, "IslandBackdrop", "Island backdrop", 0x80000000, x, 0, Width, Height, IntPtr.Zero, IntPtr.Zero, wc.inst, IntPtr.Zero);
+            SetLayeredWindowAttributes(s_window, 0, 255, 0x2);  // LWA_ALPHA
             SetWindowPos(s_window, new IntPtr(-1), 0, 0, 0, 0, 0x1 | 0x2 | 0x10 | 0x40);  // TOPMOST, NOSIZE|NOMOVE|NOACTIVATE|SHOWWINDOW
             ready.Set();
             MSG m;

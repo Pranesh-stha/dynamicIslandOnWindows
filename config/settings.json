@@ -24,8 +24,9 @@
     "slimHeight": 4,
     "peekWidth": 340,      // on hover
     "peekHeight": 56,
-    "panelWidth": 400,     // the control center (its height follows its content)
-    "panelRadius": 28
+    "panelWidth": 1180,    // the control center, at most (its height follows its content)
+    "panelMargin": 80,     // ...and it always leaves at least this much screen on each side
+    "panelRadius": 30
   },
 
   "glass": {

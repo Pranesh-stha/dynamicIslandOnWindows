@@ -27,7 +27,7 @@ namespace
 void ControlKitDemo::Build()
 {
     const Ui& ui = m_ui;
-    const float width = ui.EvenPx(ui.layout->panelWidth);
+    const float width = ui.EvenPx(400.0f);  // a narrow panel of its own
     ResetLayer(width, 0.0f);
     const float pad = ui.Px(18.0f);
     auto add = [&](const winrt::Windows::UI::Composition::Visual& visual) { m_layer.Children().InsertAtTop(visual); };

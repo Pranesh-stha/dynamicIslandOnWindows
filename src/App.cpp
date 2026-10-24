@@ -66,13 +66,24 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
     // Quick controls.
     actions.setVolume = [this](float volume) { m_audio.SetVolume(volume); };
     actions.toggleMute = [this] { m_audio.ToggleMute(); };
+    actions.setAppVolume = [this](const std::wstring& app, float volume) { m_audio.SetAppVolume(app, volume); };
+    actions.toggleAppMute = [this](const std::wstring& app) { m_audio.ToggleAppMute(app); };
     actions.setBrightness = [this](const std::wstring& display, float value) { m_brightness.Set(display, value); };
     actions.setWifi = [this](bool on) { m_radios.SetWifi(on); };
     actions.setBluetooth = [this](bool on) { m_radios.SetBluetooth(on); };
+    actions.scanWifi = [this] { m_wifi.Scan(); };
+    actions.connectWifi = [this](const std::wstring& ssid) { m_wifi.Connect(ssid); };
+    actions.toggleBluetoothDevice = [this](const std::wstring& device) { m_bluetooth.Toggle(device); };
+    actions.startBluetoothSearch = [this] { m_bluetooth.StartSearch(); };
+    actions.stopBluetoothSearch = [this] { m_bluetooth.StopSearch(); };
+    actions.pairBluetoothDevice = [this](const std::wstring& device) { m_bluetooth.Pair(device); };
     actions.openSettings = [](const wchar_t* page) { OpenWithDefaultApp(page); };
     m_audio.Start([this](const AudioState& audio) { m_island.SetAudio(audio); });
     m_brightness.Start([this](const BrightnessState& brightness) { m_island.SetBrightness(brightness); });
     m_radios.Start([this](const RadiosState& radios) { m_island.SetRadios(radios); });
+    m_wifi.Start([this](const WifiState& wifi) { m_island.SetWifi(wifi); });
+    m_bluetooth.Start([this](const BluetoothState& bluetooth) { m_island.SetBluetooth(bluetooth); });
+    m_power.Start([this](const PowerState& power) { m_island.SetPower(power); });
     m_island.OnDisplaysChanged([this] { m_brightness.Refresh(); });
 
     m_island.OnStateChanged([this](IslandState state)

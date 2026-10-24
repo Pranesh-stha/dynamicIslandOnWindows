@@ -30,6 +30,9 @@ function Morph([string]$name, [int]$pose, [int]$row, [int]$ms) {
     $report.Add([Visual]::Timeline($row, $ms))
 }
 
+# The control center is wide: the backdrop spans the screen (it lets clicks through).
+[Visual]::Width = [Visual]::GetSystemMetrics(0)
+[Visual]::Height = 760
 [Visual]::StartBackdrop()
 Start-Process $exe -ArgumentList "--pose idle"
 Start-Sleep -Milliseconds 1500
@@ -46,7 +49,7 @@ try {
 
     Morph "peek -> expanded" 3 $row 1100
     $r = [Visual]::IslandRect(); $report.Add("expanded window after settling: $($r.Right - $r.Left) x $($r.Bottom - $r.Top) px")
-    [Visual]::Shot((Join-Path $Out "3-expanded.png"), 900, 600)
+    [Visual]::Shot((Join-Path $Out "3-expanded.png"), [Visual]::Width, [Visual]::Height)
 
     Morph "expanded -> idle" 1 $row 1100
     [Visual]::Shot((Join-Path $Out "4-idle-again.png"), 700, 110)

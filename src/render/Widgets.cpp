@@ -49,6 +49,7 @@ RoundedRect::RoundedRect(const Ui& ui, float width, float height, float radius, 
 
 void RoundedRect::Resize(float width, float height, float radius)
 {
+    radius = std::min(radius, std::min(width, height) / 2.0f);  // never a degenerate shape
     visual.Size({ width, height });
     geometry.Size({ width, height });
     geometry.CornerRadius({ radius, radius });
@@ -84,6 +85,15 @@ void Label::SetMaxWidth(float widthPx)
     if (widthPx != m_style.maxWidthPx)
     {
         m_style.maxWidthPx = widthPx;
+        Render();
+    }
+}
+
+void Label::SetMaxLines(int lines)
+{
+    if (lines != m_style.maxLines)
+    {
+        m_style.maxLines = lines;
         Render();
     }
 }
@@ -497,8 +507,10 @@ ToggleTile::ToggleTile(const Ui& ui, wchar_t glyph, std::wstring_view title)
       m_subtitle(ui, 11.5f),
       m_switch(ui)
 {
-    m_background = RoundedRect(ui, 1.0f, 1.0f, 1.0f, White(0.08f));
-    m_hoverLayer = RoundedRect(ui, 1.0f, 1.0f, 1.0f, White(0.06f));
+    m_background = RoundedRect(ui, 1.0f, 1.0f, 0.0f, White(0.08f));
+    m_selectedLayer = RoundedRect(ui, 1.0f, 1.0f, 0.0f, White(0.12f));
+    m_selectedLayer.visual.Opacity(0.0f);
+    m_hoverLayer = RoundedRect(ui, 1.0f, 1.0f, 0.0f, White(0.06f));
     m_hoverLayer.visual.Opacity(0.0f);
     const float iconSize = ui.EvenPx(32.0f);
     m_iconOff = RoundedRect(ui, iconSize, iconSize, iconSize / 2.0f, White(0.14f));
@@ -509,10 +521,11 @@ ToggleTile::ToggleTile(const Ui& ui, wchar_t glyph, std::wstring_view title)
     m_title.SetText(title);
     m_subtitle.Visual().Opacity(0.6f);
 
-    for (const wuc::Visual& visual : { wuc::Visual(m_background.visual), wuc::Visual(m_hoverLayer.visual),
-                                       wuc::Visual(m_iconOff.visual), wuc::Visual(m_iconOn.visual),
-                                       wuc::Visual(m_icon.Visual()), wuc::Visual(m_title.Visual()),
-                                       wuc::Visual(m_subtitle.Visual()), wuc::Visual(m_switch.Visual()) })
+    for (const wuc::Visual& visual : { wuc::Visual(m_background.visual), wuc::Visual(m_selectedLayer.visual),
+                                       wuc::Visual(m_hoverLayer.visual), wuc::Visual(m_iconOff.visual),
+                                       wuc::Visual(m_iconOn.visual), wuc::Visual(m_icon.Visual()),
+                                       wuc::Visual(m_title.Visual()), wuc::Visual(m_subtitle.Visual()),
+                                       wuc::Visual(m_switch.Visual()) })
     {
         m_root.Children().InsertAtTop(visual);
     }
@@ -522,6 +535,7 @@ void ToggleTile::Layout()
 {
     const float radius = m_ui.Px(14.0f);
     m_background.Resize(m_width, m_height, radius);
+    m_selectedLayer.Resize(m_width, m_height, radius);
     m_hoverLayer.Resize(m_width, m_height, radius);
 
     const float pad = m_ui.Px(12.0f);
@@ -531,11 +545,12 @@ void ToggleTile::Layout()
     m_iconOn.visual.Offset({ pad, iconY, 0.0f });
     m_icon.SetPosition(pad + std::round((iconSize - m_icon.Width()) / 2.0f), iconY + std::round((iconSize - m_icon.Height()) / 2.0f));
 
-    const float switchX = m_width - pad - m_switch.Width();
-    m_switch.Visual().Offset({ switchX, std::round((m_height - m_switch.Height()) / 2.0f), 0.0f });
+    m_switchX = m_width - pad - m_switch.Width();
+    m_switch.Visual().Offset({ m_switchX, std::round((m_height - m_switch.Height()) / 2.0f), 0.0f });
 
     const float textX = pad + iconSize + m_ui.Px(10.0f);
-    const float textWidth = std::max(0.0f, switchX - m_ui.Px(8.0f) - textX);
+    const float textEnd = m_compact ? m_width - pad : m_switchX - m_ui.Px(8.0f);
+    const float textWidth = std::max(0.0f, textEnd - textX);
     m_title.SetMaxWidth(textWidth);
     m_subtitle.SetMaxWidth(textWidth);
     const float textTop = std::round((m_height - m_title.Height() - m_subtitle.Height()) / 2.0f);
@@ -543,10 +558,41 @@ void ToggleTile::Layout()
     m_subtitle.SetPosition(textX, textTop + m_title.Height());
 }
 
+void ToggleTile::SetCompact(bool compact)
+{
+    m_compact = compact;
+    // The hidden switch never animates (springs on unseen visuals crash DWM, PLAN.md D11).
+    m_switch.Visual().IsVisible(!compact);
+}
+
+void ToggleTile::SetBusy(bool busy)
+{
+    if (!m_compact)
+    {
+        m_switch.SetBusy(busy);
+        return;
+    }
+    // Compact: the icon pulses instead of the switch's knob.
+    if (busy == m_busy)
+    {
+        return;
+    }
+    m_busy = busy;
+    if (busy)
+    {
+        Motion::Pulse(m_icon.Visual(), L"Opacity", 1.0f, 0.35f, 900);
+    }
+    else
+    {
+        m_icon.Visual().StopAnimation(L"Opacity");
+        m_icon.Visual().Opacity(1.0f);
+    }
+}
+
 void ToggleTile::SetOn(bool on, bool animate)
 {
     m_isOn = on;
-    m_switch.SetOn(on, animate);
+    m_switch.SetOn(on, animate && !m_compact);
     if (animate)
     {
         Motion::EaseTo(m_iconOn.visual, L"Opacity", on ? 1.0f : 0.0f, 180);
@@ -562,24 +608,187 @@ void ToggleTile::SetSubtitle(std::wstring_view text)
     m_subtitle.SetText(text);
 }
 
+void ToggleTile::SetSelected(bool selected, bool animate)
+{
+    if (animate)
+    {
+        Motion::EaseTo(m_selectedLayer.visual, L"Opacity", selected ? 1.0f : 0.0f, 180);
+    }
+    else
+    {
+        SetOpacityNow(m_selectedLayer.visual, selected ? 1.0f : 0.0f);
+    }
+}
+
 void ToggleTile::OnHoverChanged(bool hovered)
 {
     Motion::EaseTo(m_hoverLayer.visual, L"Opacity", hovered ? 1.0f : 0.0f, m_ui.motion->hoverFadeMs);
-    m_switch.SetHovered(hovered);
+    if (!m_compact)
+    {
+        m_switch.SetHovered(hovered);
+    }
+}
+
+void ToggleTile::OnPointerDown(float x, float)
+{
+    if (m_compact)
+    {
+        // The round icon and a little room around it is the on/off button.
+        m_pressOnSwitch = !onSelect || x <= m_ui.Px(12.0f) + m_iconOff.visual.Size().x + m_ui.Px(4.0f);
+        return;
+    }
+    // The switch and a little room around it count as "the switch".
+    m_pressOnSwitch = !onSelect || x >= m_switchX - m_ui.Px(8.0f);
+    m_switch.SetPressed(m_pressOnSwitch);  // the knob stretches only when you hold the switch
 }
 
 void ToggleTile::OnPressChanged(bool pressed)
 {
     Motion::SpringTo(m_root, L"Scale", pressed ? float3{ 0.97f, 0.97f, 1.0f } : float3{ 1.0f, 1.0f, 1.0f }, m_ui.motion->press);
-    m_switch.SetPressed(pressed);
+    if (!pressed && !m_compact)
+    {
+        m_switch.SetPressed(false);
+    }
 }
 
 void ToggleTile::OnClick()
 {
+    if (onSelect && !m_pressOnSwitch)
+    {
+        onSelect();
+        return;
+    }
     SetOn(!m_isOn);
     if (onToggle)
     {
         onToggle(m_isOn);
+    }
+}
+
+// --- ListRow -----------------------------------------------------------------
+
+ListRow::ListRow(const Ui& ui)
+    : Control(ui),
+      m_icon(ui, 14.0f, DWRITE_FONT_WEIGHT_NORMAL, true),
+      m_title(ui, 13.0f),
+      m_detail(ui, 11.0f),
+      m_trailing(ui, 11.0f, DWRITE_FONT_WEIGHT_NORMAL, true)
+{
+    m_highlight = RoundedRect(ui, 1.0f, 1.0f, 0.0f, White(0.08f));
+    m_highlight.visual.Opacity(0.0f);
+    const float iconSize = ui.EvenPx(28.0f);
+    m_iconOff = RoundedRect(ui, iconSize, iconSize, iconSize / 2.0f, White(0.12f));
+    m_iconOn = RoundedRect(ui, iconSize, iconSize, iconSize / 2.0f, ui.accent);
+    m_iconOn.visual.Opacity(0.0f);
+    m_detail.Visual().Opacity(0.55f);
+    m_trailing.Visual().Opacity(0.5f);
+    for (const wuc::Visual& visual : { wuc::Visual(m_highlight.visual), wuc::Visual(m_iconOff.visual),
+                                       wuc::Visual(m_iconOn.visual), wuc::Visual(m_icon.Visual()),
+                                       wuc::Visual(m_title.Visual()), wuc::Visual(m_detail.Visual()),
+                                       wuc::Visual(m_trailing.Visual()) })
+    {
+        m_root.Children().InsertAtTop(visual);
+    }
+}
+
+void ListRow::Layout()
+{
+    m_highlight.Resize(m_width, m_height, m_ui.Px(10.0f));
+    Arrange();
+}
+
+void ListRow::Arrange()
+{
+    const float pad = m_ui.Px(5.0f);
+    const float iconSize = m_iconOff.visual.Size().x;
+    const float iconY = std::round((m_height - iconSize) / 2.0f);
+    m_iconOff.visual.Offset({ pad, iconY, 0.0f });
+    m_iconOn.visual.Offset({ pad, iconY, 0.0f });
+    m_icon.SetPosition(pad + std::round((iconSize - m_icon.Width()) / 2.0f), iconY + std::round((iconSize - m_icon.Height()) / 2.0f));
+
+    const float trailingRoom = m_trailing.Text().empty() ? 0.0f : m_trailing.Width() + m_ui.Px(14.0f);
+    m_trailing.SetPosition(m_width - m_ui.Px(10.0f) - m_trailing.Width(), std::round((m_height - m_trailing.Height()) / 2.0f));
+    const float textX = pad + iconSize + m_ui.Px(10.0f);
+    const float textWidth = std::max(1.0f, m_width - textX - m_ui.Px(8.0f) - trailingRoom);
+    m_title.SetMaxWidth(textWidth);
+    m_detail.SetMaxWidth(textWidth);
+    const float detailHeight = m_detail.Text().empty() ? 0.0f : m_detail.Height();
+    const float textTop = std::round((m_height - m_title.Height() - detailHeight) / 2.0f);
+    m_title.SetPosition(textX, textTop);
+    m_detail.SetPosition(textX, textTop + m_title.Height());
+}
+
+void ListRow::SetContent(wchar_t glyph, std::wstring_view title, std::wstring_view detail, wchar_t trailing, bool active, bool animate)
+{
+    m_icon.SetText(glyph ? std::wstring(1, glyph) : std::wstring());
+    m_title.SetText(title);
+    m_detail.SetText(detail);
+    m_trailing.SetText(trailing ? std::wstring(1, trailing) : std::wstring());
+    Arrange();
+    if (active != m_active)
+    {
+        m_active = active;
+        if (animate)
+        {
+            Motion::EaseTo(m_iconOn.visual, L"Opacity", active ? 1.0f : 0.0f, 180);
+        }
+        else
+        {
+            SetOpacityNow(m_iconOn.visual, active ? 1.0f : 0.0f);
+        }
+    }
+}
+
+void ListRow::SetBusy(bool busy)
+{
+    if (busy == m_busy)
+    {
+        return;
+    }
+    m_busy = busy;
+    if (busy)
+    {
+        Motion::Pulse(m_icon.Visual(), L"Opacity", 1.0f, 0.35f, 900);
+    }
+    else
+    {
+        m_icon.Visual().StopAnimation(L"Opacity");
+        m_icon.Visual().Opacity(1.0f);
+    }
+}
+
+void ListRow::SetShown(bool shown, bool animate)
+{
+    SetInteractive(shown);
+    if (animate)
+    {
+        Motion::EaseTo(m_root, L"Opacity", shown ? 1.0f : 0.0f, 160);
+    }
+    else
+    {
+        SetOpacityNow(m_root, shown ? 1.0f : 0.0f);
+    }
+    if (!shown)
+    {
+        SetBusy(false);
+    }
+}
+
+void ListRow::OnHoverChanged(bool hovered)
+{
+    Motion::EaseTo(m_highlight.visual, L"Opacity", hovered ? 1.0f : 0.0f, m_ui.motion->hoverFadeMs);
+}
+
+void ListRow::OnPressChanged(bool pressed)
+{
+    Motion::SpringTo(m_root, L"Scale", pressed ? float3{ 0.98f, 0.98f, 1.0f } : float3{ 1.0f, 1.0f, 1.0f }, m_ui.motion->press);
+}
+
+void ListRow::OnClick()
+{
+    if (onClick)
+    {
+        onClick();
     }
 }
 

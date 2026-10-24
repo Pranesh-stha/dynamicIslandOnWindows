@@ -17,6 +17,9 @@
 #include "render/IslandVisuals.h"
 #include "render/Widgets.h"
 #include "services/AudioService.h"
+#include "services/BluetoothService.h"
+#include "services/PowerService.h"
+#include "services/WifiService.h"
 #include "services/BrightnessService.h"
 #include "services/MediaState.h"
 #include "services/RadioService.h"
@@ -73,6 +76,9 @@ public:
     void SetAudio(const AudioState& audio);
     void SetBrightness(const BrightnessState& brightness);
     void SetRadios(const RadiosState& radios);
+    void SetWifi(const WifiState& wifi);
+    void SetBluetooth(const BluetoothState& bluetooth);
+    void SetPower(const PowerState& power);
 
     // Opens the panel with one of every control (tray menu).
     void OpenControlKitDemo();
@@ -141,6 +147,9 @@ private:
     AudioState m_audio;
     BrightnessState m_brightness;
     RadiosState m_radios;
+    WifiState m_wifi;
+    BluetoothState m_bluetooth;
+    PowerState m_power;
     std::function<void(IslandState)> m_onStateChanged;
     std::function<void()> m_onDisplaysChanged;
 

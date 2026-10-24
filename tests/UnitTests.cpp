@@ -3,9 +3,11 @@
 // Each CHECK that fails prints its file and line; the exit code is the
 // number of failures, so 0 means everything passed.
 //
-// "IslandTests.exe --hardware" also checks the real volume and brightness
-// services. It changes the volume and each display's brightness by 1 %
-// (too little to notice) and puts them back.
+// "IslandTests.exe --hardware" also checks the real volume, brightness and
+// mixer services. It changes the volume, each display's brightness and one
+// app's volume by 1 % (too little to notice) and puts them back. It lists
+// the battery, Wi-Fi networks and Bluetooth devices but never switches,
+// joins or connects anything.
 
 #include <windows.h>
 #include <Unknwn.h>
@@ -17,6 +19,7 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.System.h>
 
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -29,8 +32,14 @@
 #include "StateMachine.h"
 #include "platform/Settings.h"
 #include "render/Widgets.h"
+#include "render/Glyphs.h"
 #include "services/AudioService.h"
+#include "services/BluetoothService.h"
 #include "services/BrightnessService.h"
+#include "services/PowerService.h"
+#include "services/WifiService.h"
+#include "views/sections/ConnectionsSection.h"
+#include "views/sections/SoundSection.h"
 #include "services/MediaState.h"
 #include "services/Throttle.h"
 #include "services/WindowClassifier.h"
@@ -485,6 +494,86 @@ namespace
         CHECK(media.PositionAt(then) == 50.0);
     }
 
+    void TestQuickControls()
+    {
+        // Wi-Fi: one row per name, the strongest access point wins; hidden
+        // networks dropped; connected first, then saved, then by signal.
+        const auto networks = GroupNetworks(
+            { { L"Home", 2, true }, { L"Home", 4, true }, { L"", 4, false }, { L"Cafe", 3, false }, { L"Neighbour", 4, true }, { L"Work", 1, true } },
+            L"Work", { L"Home", L"Work" });
+        CHECK(networks.size() == 4);
+        CHECK(networks.size() == 4 && networks[0].ssid == L"Work" && networks[0].connected);
+        CHECK(networks.size() == 4 && networks[1].ssid == L"Home" && networks[1].bars == 4 && networks[1].saved);
+        CHECK(networks.size() == 4 && networks[2].ssid == L"Neighbour" && !networks[2].saved);
+        CHECK(networks.size() == 4 && networks[3].ssid == L"Cafe" && !networks[3].secured);
+        // The connected network missing from a scan still shows, at the top.
+        const auto missing = GroupNetworks({ { L"Cafe", 3, false } }, L"Home", { L"Home" });
+        CHECK(missing.size() == 2 && missing[0].ssid == L"Home" && missing[0].connected);
+
+        // Mixer: an app's sessions merge; playing apps first, Windows' sounds last.
+        const auto apps = GroupSessions({
+            { L"system", L"System sounds", 1.0f, false, false, true },
+            { L"chrome.exe", L"Chrome", 0.5f, false, false, false },
+            { L"spotify.exe", L"Spotify", 0.8f, false, true, false },
+            { L"chrome.exe", L"Chrome", 0.7f, true, true, false },
+        });
+        CHECK(apps.size() == 3);
+        CHECK(apps.size() == 3 && apps[0].key == L"chrome.exe" && apps[0].active && !apps[0].muted && apps[0].volume == 0.7f);
+        CHECK(apps.size() == 3 && apps[1].key == L"spotify.exe");
+        CHECK(apps.size() == 3 && apps[2].system);
+        CHECK(FriendlyExeName(L"VALORANT-Win64-Shipping.exe") == L"VALORANT");
+        CHECK(FriendlyExeName(L"chrome.exe") == L"Chrome");
+        CHECK(FriendlyExeName(L"Discord.exe") == L"Discord");
+
+        // Mixer rows keep their app, so sliders never swap under the mouse.
+        std::array<std::wstring, 3> rows{};
+        AssignMixerRows(rows, { L"a", L"b" });
+        CHECK(rows[0] == L"a" && rows[1] == L"b" && rows[2].empty());
+        AssignMixerRows(rows, { L"c", L"b", L"a" });  // a new app sorted first still goes to a free row
+        CHECK(rows[0] == L"a" && rows[1] == L"b" && rows[2] == L"c");
+        AssignMixerRows(rows, { L"b", L"d", L"e" });  // a and c left: d fills a free row; no room for e
+        CHECK(rows[0] == L"d" && rows[1] == L"b" && rows[2].empty() == false && rows[2] == L"e");
+
+        // Bluetooth: the device kind from its "class of device".
+        CHECK(KindFromClassOfDevice(4, 6) == DeviceKind::Audio);         // headphones
+        CHECK(KindFromClassOfDevice(5, 0x20) == DeviceKind::Mouse);      // pointing device
+        CHECK(KindFromClassOfDevice(5, 0x10) == DeviceKind::Keyboard);
+        CHECK(KindFromClassOfDevice(5, 0x02) == DeviceKind::Gamepad);
+        CHECK(KindFromClassOfDevice(2, 3) == DeviceKind::Phone);
+        CHECK(KindFromClassOfDevice(0, 0) == DeviceKind::Other);
+        std::vector<BluetoothDevice> devices{ { L"1", L"zeta" }, { L"2", L"Alpha" }, { L"3", L"Buds", DeviceKind::Audio, true, true },
+                                              { L"4", L"Speaker", DeviceKind::Audio, false, true } };
+        SortDevices(devices);
+        CHECK(devices[0].name == L"Buds" && devices[1].name == L"Speaker" && devices[2].name == L"Alpha" && devices[3].name == L"zeta");
+
+        // Long lists page: 3 lines + a "more" row per page of 4, wrapping around.
+        auto page = PageLines(3, 4, 0);
+        CHECK(!page.more && page.first == 0 && page.count == 3);
+        page = PageLines(7, 4, 0);
+        CHECK(page.more && page.first == 0 && page.count == 3);
+        page = PageLines(7, 4, 2);
+        CHECK(page.more && page.first == 6 && page.count == 1);
+        page = PageLines(7, 4, 3);  // past the last page: back to the first
+        CHECK(page.page == 0 && page.first == 0);
+
+        // Battery text and icon.
+        PowerState power;
+        power.hasBattery = true;
+        power.percent = 84;
+        power.minutesLeft = 130;
+        CHECK(PowerDescription(power) == L"2 h 10 min left");
+        CHECK(BatteryGlyph(power) == static_cast<wchar_t>(Glyph::Battery0 + 8));
+        power.charging = power.pluggedIn = true;
+        power.minutesToFull = 45;
+        CHECK(PowerDescription(power) == L"Charging · 45 min to full");
+        CHECK(BatteryGlyph(power) == static_cast<wchar_t>(Glyph::BatteryCharging0 + 8));
+        power.charging = false;
+        power.percent = 100;
+        CHECK(PowerDescription(power) == L"Fully charged");
+        PowerState desktop;
+        CHECK(PowerDescription(desktop) == L"Plugged in" && BatteryGlyph(desktop) == Glyph::Plug);
+    }
+
     void TestThrottle()
     {
         // Brightness writes to a slow monitor (PLAN.md E7, E9).
@@ -648,6 +737,86 @@ namespace
                 Sleep(600);
             }
         }
+
+        // Mixer: the apps playing sound are listed; an app's volume set through
+        // the service reaches Windows (a fresh service reads it back), then it's
+        // restored. Muted apps are left alone (raising the volume would unmute them).
+        {
+            AudioState last;
+            AudioService audio;
+            audio.Start([&](const AudioState& state) { last = state; });
+            PumpUntil([&] { return last.available; }, 2000);
+            std::printf("  mixer: %zu apps\n", last.apps.size());
+            const AppVolume* app = nullptr;
+            for (const AppVolume& entry : last.apps)
+            {
+                std::printf("    %ls: %.0f %%%s%s\n", entry.name.c_str(), entry.volume * 100.0f, entry.muted ? ", muted" : "",
+                    entry.active ? ", playing" : "");
+                if (!app && !entry.system && !entry.muted)
+                {
+                    app = &entry;
+                }
+            }
+            if (app)
+            {
+                const std::wstring key = app->key;
+                const float before = app->volume;
+                const float nudged = before > 0.5f ? before - 0.01f : before + 0.01f;
+                audio.SetAppVolume(key, nudged);
+                auto readBack = [&]
+                {
+                    AudioState fresh;
+                    AudioService reader;
+                    reader.Start([&](const AudioState& state) { fresh = state; });
+                    PumpUntil([&] { return fresh.available; }, 2000);
+                    for (const AppVolume& entry : fresh.apps)
+                    {
+                        if (entry.key == key)
+                        {
+                            return entry.volume;
+                        }
+                    }
+                    return -1.0f;
+                };
+                const float got = readBack();
+                std::printf("    %ls set to %.0f %%, read back %.0f %%\n", app->name.c_str(), nudged * 100.0f, got * 100.0f);
+                CHECK(std::abs(got - nudged) < 0.002f);
+                audio.SetAppVolume(key, before);  // put it back
+                CHECK(std::abs(readBack() - before) < 0.002f);
+            }
+        }
+
+        // Battery, Wi-Fi networks and Bluetooth devices: read only. Nothing is
+        // switched, joined, connected or paired.
+        {
+            PowerService power;
+            power.Start([](const PowerState&) {});
+            std::printf("  power: %s%d %%, %ls\n", power.Current().hasBattery ? "battery " : "no battery, ", power.Current().percent,
+                PowerDescription(power.Current()).c_str());
+
+            WifiState wifi;
+            WifiService wifiService;
+            wifiService.Start([&](const WifiState& state) { wifi = state; });
+            PumpUntil([&] { return wifi.available; }, 5000);
+            wifiService.Scan();
+            PumpUntil([&] { return wifi.scanning; }, 1000);
+            PumpUntil([&] { return !wifi.scanning; }, 10000);
+            const auto connected = std::count_if(wifi.networks.begin(), wifi.networks.end(), [](const WifiNetwork& n) { return n.connected; });
+            std::printf("  wifi: %s, %zu networks after a scan, %s\n", wifi.available ? "adapter found" : "NO ADAPTER", wifi.networks.size(),
+                connected ? "connected to one" : "not connected");
+            CHECK(wifi.available && !wifi.networks.empty());
+
+            BluetoothState bluetooth;
+            BluetoothService bluetoothService;
+            bluetoothService.Start([&](const BluetoothState& state) { bluetooth = state; });
+            PumpUntil([&] { return !bluetooth.paired.empty(); }, 5000);
+            PumpUntil([] { return false; }, 1000);  // the audio-device lookup
+            std::printf("  bluetooth: %zu paired devices\n", bluetooth.paired.size());
+            for (const BluetoothDevice& device : bluetooth.paired)
+            {
+                std::printf("    %ls: %ls%s\n", device.name.c_str(), device.detail.c_str(), device.canConnect ? " (Island can connect it)" : "");
+            }
+        }
     }
 
     // The compositor needs a dispatcher queue on its thread, as in the app.
@@ -672,6 +841,7 @@ int main(int argc, char** argv)
     TestMedia();
     TestArtworkDecode();
     TestThrottle();
+    TestQuickControls();
 
     // Controls need a real compositor (no window: nothing is shown).
     const auto queue = CreateDispatcherQueue();
@@ -686,7 +856,7 @@ int main(int argc, char** argv)
 
     if (hardware)
     {
-        std::printf("hardware checks (volume and brightness move by 1 %% and back):\n");
+        std::printf("hardware checks (volume, brightness and one app's volume move by 1 %% and back; Wi-Fi and Bluetooth are only read):\n");
         TestHardware();
     }
 

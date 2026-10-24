@@ -8,6 +8,9 @@
 #include "platform/Settings.h"
 #include "platform/Tray.h"
 #include "services/AudioService.h"
+#include "services/BluetoothService.h"
+#include "services/PowerService.h"
+#include "services/WifiService.h"
 #include "services/BrightnessService.h"
 #include "services/FullscreenWatcher.h"
 #include "services/MediaService.h"
@@ -38,4 +41,7 @@ private:
     AudioService m_audio;
     BrightnessService m_brightness;
     RadioService m_radios;
+    WifiService m_wifi;
+    BluetoothService m_bluetooth;
+    PowerService m_power;
 };

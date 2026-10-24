@@ -29,6 +29,7 @@ struct Ui
     const MotionSettings* motion = nullptr;
     const LayoutSettings* layout = nullptr;
     float scale = 1.0f;  // display scale: 1.25 at 125 %, 1.75 at 175 %
+    float screenWidth = 0.0f;  // width of the island's monitor, in pixels
     winrt::Windows::UI::Color accent{ 255, 96, 205, 255 };
 
     // DIPs to whole pixels. Everything sits on whole pixels so it's sharp at rest.
@@ -63,6 +64,7 @@ public:
     winrt::Windows::UI::Composition::SpriteVisual Visual() const { return m_visual; }
     void SetText(std::wstring_view text);
     void SetMaxWidth(float widthPx);  // longer text ends in "…"
+    void SetMaxLines(int lines);      // with a max width: wrap onto this many lines (default 1)
     void SetPosition(float x, float y);  // top-left corner, in pixels
     float Width() const { return std::max(0.0f, m_size.Width - 2.0f); }
     float Height() const;
@@ -228,7 +230,9 @@ private:
 };
 
 // A tile with an icon, a title, a subtitle and a switch (Wi-Fi, Bluetooth).
-// Clicking anywhere on it toggles; right-click is for "open Settings".
+// Without onSelect, a click anywhere toggles. With onSelect, only the
+// switch toggles and the rest of the tile selects it (e.g. to show its
+// list of networks). Right-click is for "open Settings".
 class ToggleTile : public Control
 {
 public:
@@ -237,9 +241,50 @@ public:
     void SetOn(bool on, bool animate = true);
     bool IsOn() const { return m_isOn; }
     void SetSubtitle(std::wstring_view text);
-    void SetBusy(bool busy) { m_switch.SetBusy(busy); }
+    void SetBusy(bool busy);
+    void SetSelected(bool selected, bool animate = true);
+
+    // Compact: no switch. The round icon turns it on and off (like macOS'
+    // Control Center) and the rest of the tile selects it, so two tiles fit
+    // side by side. Set before SetBounds.
+    void SetCompact(bool compact);
 
     std::function<void(bool on)> onToggle;
+    std::function<void()> onSelect;
+
+    void OnHoverChanged(bool hovered) override;
+    void OnPressChanged(bool pressed) override;
+    void OnPointerDown(float x, float y) override;
+    void OnClick() override;
+
+protected:
+    void Layout() override;
+
+private:
+    RoundedRect m_background, m_selectedLayer, m_hoverLayer, m_iconOff, m_iconOn;
+    Label m_icon, m_title, m_subtitle;
+    ToggleSwitch m_switch;
+    float m_switchX = 0.0f;
+    bool m_isOn = false;
+    bool m_pressOnSwitch = false;
+    bool m_compact = false;
+    bool m_busy = false;
+};
+
+// One line of a list (a Wi-Fi network, a Bluetooth device, "Add a
+// device"): an icon in a circle (accent coloured when active, e.g.
+// connected), a title, a detail line and an optional small icon at the end.
+class ListRow : public Control
+{
+public:
+    explicit ListRow(const Ui& ui);
+
+    // glyph/trailing 0 = none. Redraws only what changed.
+    void SetContent(wchar_t glyph, std::wstring_view title, std::wstring_view detail, wchar_t trailing, bool active, bool animate);
+    void SetBusy(bool busy);                  // a gentle pulse while something is in progress
+    void SetShown(bool shown, bool animate);  // hidden rows don't take the mouse
+
+    std::function<void()> onClick;
 
     void OnHoverChanged(bool hovered) override;
     void OnPressChanged(bool pressed) override;
@@ -249,10 +294,12 @@ protected:
     void Layout() override;
 
 private:
-    RoundedRect m_background, m_hoverLayer, m_iconOff, m_iconOn;
-    Label m_icon, m_title, m_subtitle;
-    ToggleSwitch m_switch;
-    bool m_isOn = false;
+    void Arrange();
+
+    RoundedRect m_highlight, m_iconOff, m_iconOn;
+    Label m_icon, m_title, m_detail, m_trailing;
+    bool m_active = false;
+    bool m_busy = false;
 };
 
 // A row of choices with a selection pill that slides to the chosen one

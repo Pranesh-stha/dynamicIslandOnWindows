@@ -13,11 +13,24 @@ struct IslandActions
     std::function<void()> previous;
     std::function<void()> nextMediaSession;  // when several apps play media
 
-    // Quick controls
+    // Sound
     std::function<void(float volume)> setVolume;  // 0..1
     std::function<void()> toggleMute;
+    std::function<void(const std::wstring& app, float volume)> setAppVolume;
+    std::function<void(const std::wstring& app)> toggleAppMute;
+
+    // Displays
     std::function<void(const std::wstring& display, float value)> setBrightness;  // 0..1
+
+    // Connections
     std::function<void(bool on)> setWifi;
     std::function<void(bool on)> setBluetooth;
+    std::function<void()> scanWifi;
+    std::function<void(const std::wstring& ssid)> connectWifi;
+    std::function<void(const std::wstring& device)> toggleBluetoothDevice;
+    std::function<void()> startBluetoothSearch;
+    std::function<void()> stopBluetoothSearch;
+    std::function<void(const std::wstring& device)> pairBluetoothDevice;
+
     std::function<void(const wchar_t* page)> openSettings;  // e.g. L"ms-settings:sound"
 };

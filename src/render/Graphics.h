@@ -21,6 +21,7 @@ struct TextStyle
     DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL;
     bool icon = false;        // use the icon font (Segoe Fluent Icons) instead of Segoe UI
     float maxWidthPx = 0.0f;  // 0 = no limit; longer text ends in "…"
+    int maxLines = 1;         // with maxWidthPx: wrap onto up to this many lines, the last one ending in "…"
 };
 
 // The GPU side of drawing. Text, icons and images are drawn once into

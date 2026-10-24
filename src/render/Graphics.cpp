@@ -135,9 +135,21 @@ winrt::com_ptr<IDWriteTextLayout> Graphics::CreateLayout(std::wstring_view text,
     winrt::com_ptr<IDWriteTextFormat> format;
     winrt::check_hresult(m_dwrite->CreateTextFormat(style.icon ? m_iconFont.c_str() : m_textFont.c_str(), nullptr,
         style.weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL, style.sizePx, L"", format.put()));
-    format->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);
-
     const bool limited = style.maxWidthPx > 0.0f;
+    const bool wraps = limited && style.maxLines > 1;
+    format->SetWordWrapping(wraps ? DWRITE_WORD_WRAPPING_WRAP : DWRITE_WORD_WRAPPING_NO_WRAP);
+
+    // Wrapped text gets room for maxLines lines; what doesn't fit is trimmed.
+    float maxHeight = 10000.0f;
+    if (wraps)
+    {
+        winrt::com_ptr<IDWriteTextLayout> probe;
+        winrt::check_hresult(m_dwrite->CreateTextLayout(L"Ag", 2, format.get(), 100000.0f, 10000.0f, probe.put()));
+        DWRITE_TEXT_METRICS line{};
+        probe->GetMetrics(&line);
+        maxHeight = line.height * static_cast<float>(style.maxLines) + 0.5f;
+    }
+
     if (limited)
     {
         DWRITE_TRIMMING trimming{ DWRITE_TRIMMING_GRANULARITY_CHARACTER, 0, 0 };
@@ -148,21 +160,22 @@ winrt::com_ptr<IDWriteTextLayout> Graphics::CreateLayout(std::wstring_view text,
 
     winrt::com_ptr<IDWriteTextLayout> layout;
     winrt::check_hresult(m_dwrite->CreateTextLayout(text.data(), static_cast<UINT32>(text.size()), format.get(),
-        limited ? style.maxWidthPx : 100000.0f, 10000.0f, layout.put()));
+        limited ? style.maxWidthPx : 100000.0f, maxHeight, layout.put()));
     return layout;
 }
 
 Graphics::Size Graphics::MeasureText(std::wstring_view text, const TextStyle& style)
 {
     DWRITE_TEXT_METRICS metrics{};
-    CreateLayout(text, style)->GetMetrics(&metrics);
+    const auto layout = CreateLayout(text, style);
+    layout->GetMetrics(&metrics);
     float width = metrics.widthIncludingTrailingWhitespace;
     if (style.maxWidthPx > 0.0f)
     {
         width = std::min(width, style.maxWidthPx);
     }
     // One pixel of room on each side for anti-aliased edges.
-    return { std::ceil(width) + 2.0f, std::ceil(metrics.height) };
+    return { std::ceil(width) + 2.0f, std::ceil(std::min(metrics.height, layout->GetMaxHeight())) };
 }
 
 Graphics::Size Graphics::RenderText(const wuc::CompositionDrawingSurface& surface, std::wstring_view text, const TextStyle& style)

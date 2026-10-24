@@ -300,11 +300,41 @@ void IslandWindow::SetBrightness(const BrightnessState& brightness)
     }
 }
 
+void IslandWindow::SetWifi(const WifiState& wifi)
+{
+    m_wifi = wifi;
+    if (State() != IslandState::Hidden)
+    {
+        m_controlCenter->SetWifi(wifi);
+    }
+}
+
+void IslandWindow::SetBluetooth(const BluetoothState& bluetooth)
+{
+    m_bluetooth = bluetooth;
+    if (State() != IslandState::Hidden)
+    {
+        m_controlCenter->SetBluetooth(bluetooth);
+    }
+}
+
+void IslandWindow::SetPower(const PowerState& power)
+{
+    m_power = power;
+    if (State() != IslandState::Hidden)
+    {
+        m_controlCenter->SetPower(power);
+    }
+}
+
 void IslandWindow::PushQuickControls()
 {
     m_controlCenter->SetAudio(m_audio);
     SetBrightness(m_brightness);
     m_controlCenter->SetRadios(m_radios);
+    m_controlCenter->SetWifi(m_wifi);
+    m_controlCenter->SetBluetooth(m_bluetooth);
+    m_controlCenter->SetPower(m_power);
 }
 
 void IslandWindow::OpenControlKitDemo()
@@ -528,14 +558,16 @@ void IslandWindow::PlaceOnPrimaryMonitor()
     {
         return;  // nothing that matters to us changed
     }
+    const bool widthChanged = screen.right - screen.left != m_monitor.right - m_monitor.left;
     m_monitor = screen;
     Log::Info(L"primary monitor {}x{} at ({}, {}), scale {:.0f} %",
         screen.right - screen.left, screen.bottom - screen.top, screen.left, screen.top, scale * 100.0f);
 
-    if (scale != m_scale)
+    m_ui.screenWidth = static_cast<float>(screen.right - screen.left);  // the control center fits inside it
+    if (scale != m_scale || widthChanged)
     {
         m_scale = scale;
-        Rebuild();  // redraw text and icons sharply at the new scale
+        Rebuild();  // redraw text and icons sharply at the new scale (and fit the new width)
     }
     else
     {

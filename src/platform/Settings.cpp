@@ -241,7 +241,8 @@ bool ParseSettings(std::wstring_view text, Settings& out, std::wstring& message)
         layout.Number(L"slimHeight", l.slimHeight, 2.0f, 20.0f);
         layout.Number(L"peekWidth", l.peekWidth, 200.0f, 800.0f);
         layout.Number(L"peekHeight", l.peekHeight, 36.0f, 120.0f);
-        layout.Number(L"panelWidth", l.panelWidth, 300.0f, 800.0f);
+        layout.Number(L"panelWidth", l.panelWidth, 600.0f, 2400.0f);
+        layout.Number(L"panelMargin", l.panelMargin, 0.0f, 600.0f);
         layout.Number(L"panelRadius", l.panelRadius, 0.0f, 60.0f);
 
         GlassSettings& g = out.glass;

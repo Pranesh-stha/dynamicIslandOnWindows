@@ -46,6 +46,11 @@ add_library(IslandCore STATIC
     src/render/Motion.cpp
     src/render/Widgets.cpp
     src/views/ControlCenter.cpp
+    src/views/sections/ConnectionsSection.cpp
+    src/views/sections/DisplaysSection.cpp
+    src/views/sections/NowPlayingSection.cpp
+    src/views/sections/SoundSection.cpp
+    src/views/sections/StatusSection.cpp
     src/views/ControlKitDemo.cpp
     src/views/IdleView.cpp
     src/views/PeekView.cpp
@@ -54,11 +59,14 @@ add_library(IslandCore STATIC
     src/platform/Settings.cpp
     src/platform/Tray.cpp
     src/services/AudioService.cpp
+    src/services/BluetoothService.cpp
     src/services/BrightnessService.cpp
     src/services/FullscreenWatcher.cpp
     src/services/MediaService.cpp
     src/services/MediaState.cpp
+    src/services/PowerService.cpp
     src/services/RadioService.cpp
+    src/services/WifiService.cpp
     src/services/WindowClassifier.cpp
 )
 island_defaults(IslandCore)
@@ -73,6 +81,7 @@ target_link_libraries(IslandCore PUBLIC
     windowscodecs   # WIC: decoding album artwork
     dxva2           # DDC/CI: external monitor brightness
     wbemuuid        # WMI: laptop panel brightness
+    shlwapi         # app names stored in resources (volume mixer)
 )
 
 # WIN32 = a windowed app (entry point wWinMain, no console window).
