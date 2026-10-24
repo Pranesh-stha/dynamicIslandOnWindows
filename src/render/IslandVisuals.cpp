@@ -166,12 +166,18 @@ void IslandVisuals::ApplyGlass(const GlassSettings& glass, bool effectsEnabled, 
         m_glass.Brush(m_compositor.CreateColorBrush({ 255, 30, 30, 32 }));
     }
     m_tint.Brush(m_compositor.CreateColorBrush({ Alpha(glass.tintOpacity), 18, 18, 20 }));
-    // Clear glass needs less grain (it was there to hide the heavy blur's banding).
-    m_grain.Opacity(effectsEnabled ? glass.noiseOpacity * (glass.style == L"clear" ? 0.4f : 1.0f) : 0.0f);
+
+    // Live glass: the window is see-through, so what's behind shows straight
+    // through, drawn live by Windows; only part of Windows' blur goes over it.
+    const bool live = glass.style == L"live";
+    m_glass.Opacity(live && effectsEnabled ? glass.frost : 1.0f);
+
+    // Clearer glass needs less grain (it was there to hide the heavy blur's banding).
+    const bool clear = glass.style == L"clear" || live;  // the brighter rim and sheen
+    m_grain.Opacity(effectsEnabled ? glass.noiseOpacity * (clear ? 0.4f : 1.0f) : 0.0f);
 
     // The rim: brightest along the top, like light catching the upper edge
     // of glass, and a fainter glint along the bottom where light leaves it.
-    const bool clear = glass.style == L"clear";
     const float rimTop = clear ? 0.50f : 0.30f;
     const float rimBottom = clear ? 0.16f : 0.06f;
     auto rim = m_compositor.CreateLinearGradientBrush();
@@ -195,7 +201,7 @@ void IslandVisuals::ApplyGlass(const GlassSettings& glass, bool effectsEnabled, 
     sheen.ColorStops().Append(m_compositor.CreateColorGradientStop(1.0f, White(0.0f)));
     m_sheen.Brush(sheen);
 
-    m_clearStyle = clear && effectsEnabled;
+    m_clearStyle = glass.style == L"clear" && effectsEnabled;
     m_blur = glass.blur * scale;
     m_refraction = glass.refraction;
     m_saturation = glass.saturation;

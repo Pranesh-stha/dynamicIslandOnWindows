@@ -32,14 +32,17 @@ struct LayoutSettings
 
 struct GlassSettings
 {
-    // "clear": a light blur of the live screen behind, bent at the edges
-    // like real glass (needs screen capture, see GlassCapture). "frosted":
-    // Windows' own heavy blur.
-    std::wstring style = L"clear";
+    // "live": what's behind shows straight through, live (Windows draws it),
+    // with some of Windows' blur mixed over it (`frost`): no lag, no capture.
+    // "clear": a light blur of a capture of the screen behind, bent at the
+    // edges like real glass, but a few frames behind moving things (see
+    // GlassCapture). "frosted": Windows' own heavy blur.
+    std::wstring style = L"live";
+    float frost = 0.85f;          // live glass: how much of Windows' blur is mixed in (0 = none, 1 = frosted)
     float blur = 6.0f;            // clear glass: how soft what's behind looks (DIP)
     float refraction = 1.0f;      // clear glass: how strongly the edges bend (0 = flat)
     int fps = 15;                 // clear glass, Peek and panel: new pictures of what's behind a second (each costs the GPU)
-    float tintOpacity = 0.42f;    // dark tint over the blur: 0 = clear, 1 = solid
+    float tintOpacity = 0.45f;    // dark tint over the blur: 0 = clear, 1 = solid
     float saturation = 1.6f;      // colour boost of what's behind (1 = unchanged)
     float brightness = 1.0f;      // brightness of what's behind (1 = unchanged)
     float noiseOpacity = 0.035f;  // faint grain that hides banding in the blur

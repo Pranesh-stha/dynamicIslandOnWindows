@@ -62,7 +62,7 @@ bool GlassCapture::SetEnabled(bool enabled)
         return false;
     }
     m_enabled = enabled;
-    Log::Info(L"glass: {}", enabled ? L"clear (the island is left out of screenshots and recordings)" : L"frosted");
+    Log::Info(L"glass: {}", enabled ? L"clear (captured; the island is left out of screenshots and recordings)" : L"live or frosted (nothing captured)");
     return m_enabled;
 }
 

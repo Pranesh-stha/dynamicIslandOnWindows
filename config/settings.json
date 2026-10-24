@@ -35,10 +35,14 @@
   },
 
   "glass": {
-    // "clear": like iPhone glass, a light blur of what's behind that bends at
-    // the edges (Island then doesn't appear in screenshots or recordings).
-    // "frosted": Windows' own, much stronger blur.
-    "style": "clear",
+    // "live": what's behind shows straight through, live, with some of
+    // Windows' blur mixed over it ("frost"): no lag behind videos, nothing
+    // captured, almost no GPU. "clear": a light blur of a capture of what's
+    // behind, bent at the edges like real glass, but a few frames behind
+    // moving video (and Island isn't in screenshots then). "frosted":
+    // Windows' own, much stronger blur.
+    "style": "live",
+    "frost": 0.85,         // live glass: how much blur is mixed in (0 = none, 1 = frosted)
     "blur": 6,             // clear glass: how soft what's behind looks (0 = sharp)
     "refraction": 1.0,     // clear glass: how strongly the edges bend (0 = flat)
     // Clear glass, Peek and the open panel: new pictures of what's behind,
@@ -47,7 +51,7 @@
     // of the Intel GPU while open; nothing while tucked away). The small pill
     // always uses 2.
     "fps": 15,
-    "tintOpacity": 0.42,   // dark tint over the blur: 0 = clear, 1 = solid
+    "tintOpacity": 0.45,   // dark tint over the blur: 0 = clear, 1 = solid
     "saturation": 1.6,     // colour boost of what's behind (1 = unchanged)
     "brightness": 1.0,     // brightness of what's behind (1 = unchanged)
     "noiseOpacity": 0.035, // faint grain that hides banding in the blur
