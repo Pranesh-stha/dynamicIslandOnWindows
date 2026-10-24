@@ -1,0 +1,924 @@
+#include "render/Widgets.h"
+
+#include <algorithm>
+
+namespace wuc = winrt::Windows::UI::Composition;
+using winrt::Windows::UI::Color;
+using Motion::float2;
+using Motion::float3;
+
+namespace
+{
+    uint8_t Alpha(float opacity)
+    {
+        return static_cast<uint8_t>(std::lround(std::clamp(opacity, 0.0f, 1.0f) * 255.0f));
+    }
+
+    // Jumps a property to a value, cancelling any animation on it.
+    void SetOpacityNow(const wuc::Visual& visual, float opacity)
+    {
+        visual.StopAnimation(L"Opacity");
+        visual.Opacity(opacity);
+    }
+
+    constexpr float kGlyphRestOpacity = 0.85f;
+}
+
+Color White(float opacity)
+{
+    return { Alpha(opacity), 255, 255, 255 };
+}
+
+Color Black(float opacity)
+{
+    return { Alpha(opacity), 0, 0, 0 };
+}
+
+// --- RoundedRect ---------------------------------------------------------------
+
+RoundedRect::RoundedRect(const Ui& ui, float width, float height, float radius, Color fill)
+{
+    geometry = ui.compositor.CreateRoundedRectangleGeometry();
+    shape = ui.compositor.CreateSpriteShape(geometry);
+    shape.FillBrush(ui.compositor.CreateColorBrush(fill));
+    visual = ui.compositor.CreateShapeVisual();
+    visual.Shapes().Append(shape);
+    Resize(width, height, radius);
+}
+
+void RoundedRect::Resize(float width, float height, float radius)
+{
+    visual.Size({ width, height });
+    geometry.Size({ width, height });
+    geometry.CornerRadius({ radius, radius });
+}
+
+// --- Label -------------------------------------------------------------------
+
+Label::Label(const Ui& ui, float sizeDip, DWRITE_FONT_WEIGHT weight, bool icon) : m_ui(ui)
+{
+    m_style.sizePx = ui.scale * sizeDip;
+    m_style.weight = weight;
+    m_style.icon = icon;
+    m_surface = ui.graphics->CreateSurface();
+    auto brush = ui.compositor.CreateSurfaceBrush(m_surface);
+    brush.Stretch(wuc::CompositionStretch::None);  // 1 surface pixel = 1 screen pixel
+    brush.HorizontalAlignmentRatio(0.0f);
+    brush.VerticalAlignmentRatio(0.0f);
+    m_visual = ui.compositor.CreateSpriteVisual();
+    m_visual.Brush(brush);
+}
+
+void Label::SetText(std::wstring_view text)
+{
+    if (text != m_text)
+    {
+        m_text = text;
+        Render();
+    }
+}
+
+void Label::SetMaxWidth(float widthPx)
+{
+    if (widthPx != m_style.maxWidthPx)
+    {
+        m_style.maxWidthPx = widthPx;
+        Render();
+    }
+}
+
+void Label::SetPosition(float x, float y)
+{
+    // The text is drawn one pixel in from the surface's left edge.
+    m_visual.Offset({ std::round(x) - 1.0f, std::round(y), 0.0f });
+}
+
+float Label::Height() const
+{
+    // An empty label still has a line height, so layouts don't jump.
+    return m_size.Height > 0.0f ? m_size.Height : std::ceil(m_style.sizePx * 1.33f);
+}
+
+void Label::Render()
+{
+    if (m_text.empty())
+    {
+        m_size = {};
+        m_visual.Size({ 0.0f, 0.0f });
+        return;
+    }
+    m_size = m_ui.graphics->RenderText(m_surface, m_text, m_style);
+    m_visual.Size({ m_size.Width, m_size.Height });
+}
+
+// --- Control -----------------------------------------------------------------
+
+Control::Control(const Ui& ui) : m_ui(ui)
+{
+    m_root = ui.compositor.CreateContainerVisual();
+}
+
+void Control::SetBounds(float x, float y, float width, float height)
+{
+    m_x = std::round(x);
+    m_y = std::round(y);
+    m_width = width;
+    m_height = height;
+    m_root.Offset({ m_x, m_y, 0.0f });
+    m_root.Size({ width, height });
+    m_root.CenterPoint({ width / 2.0f, height / 2.0f, 0.0f });  // presses shrink towards the middle
+    Layout();
+}
+
+bool Control::Contains(float x, float y) const
+{
+    return x >= m_x && x < m_x + m_width && y >= m_y && y < m_y + m_height;
+}
+
+void Control::SetEnabled(bool enabled)
+{
+    if (enabled != m_enabled)
+    {
+        m_enabled = enabled;
+        Motion::EaseTo(m_root, L"Opacity", enabled ? 1.0f : 0.35f, m_ui.motion->hoverFadeMs * 2);
+    }
+}
+
+// --- ControlHost -------------------------------------------------------------
+
+void ControlHost::Clear()
+{
+    m_controls.clear();
+    m_hovered = nullptr;
+    m_pressed = nullptr;
+}
+
+Control* ControlHost::Hit(float x, float y) const
+{
+    for (auto it = m_controls.rbegin(); it != m_controls.rend(); ++it)
+    {
+        if ((*it)->Enabled() && (*it)->Contains(x, y))
+        {
+            return *it;
+        }
+    }
+    return nullptr;
+}
+
+void ControlHost::SetHovered(Control* control)
+{
+    if (control == m_hovered)
+    {
+        return;
+    }
+    if (m_hovered)
+    {
+        m_hovered->OnHoverChanged(false);
+    }
+    m_hovered = control;
+    if (control)
+    {
+        control->OnHoverChanged(true);
+    }
+}
+
+void ControlHost::PointerMove(float x, float y)
+{
+    if (m_pressed)
+    {
+        m_pressed->OnPointerDrag(x - m_pressed->X(), y - m_pressed->Y());
+        const bool inside = m_pressed->Contains(x, y);
+        if (!m_pressed->KeepsPressOutside() && inside != m_pressedInside)
+        {
+            // Dragging off a button releases its pressed look (and cancels the click).
+            m_pressedInside = inside;
+            m_pressed->OnPressChanged(inside);
+        }
+        return;
+    }
+    Control* hit = Hit(x, y);
+    SetHovered(hit);
+    if (hit)
+    {
+        hit->OnPointerMove(x - hit->X(), y - hit->Y());
+    }
+}
+
+bool ControlHost::PointerDown(float x, float y)
+{
+    Control* hit = Hit(x, y);
+    if (!hit)
+    {
+        return false;
+    }
+    SetHovered(hit);
+    m_pressed = hit;
+    m_pressedInside = true;
+    hit->OnPressChanged(true);
+    hit->OnPointerDown(x - hit->X(), y - hit->Y());
+    return true;
+}
+
+void ControlHost::PointerUp(float x, float y)
+{
+    if (!m_pressed)
+    {
+        return;
+    }
+    Control* control = m_pressed;
+    m_pressed = nullptr;
+    const bool inside = control->Contains(x, y);
+    if (m_pressedInside || control->KeepsPressOutside())
+    {
+        control->OnPressChanged(false);
+    }
+    PointerMove(x, y);  // update hover before the action, which may change the view
+    control->OnPointerUp(inside);
+}
+
+void ControlHost::PointerLeave()
+{
+    if (!m_pressed)
+    {
+        SetHovered(nullptr);
+    }
+}
+
+void ControlHost::CancelPress()
+{
+    if (m_pressed)
+    {
+        Control* control = m_pressed;
+        m_pressed = nullptr;
+        control->OnPressChanged(false);
+        control->OnPointerUp(false);
+    }
+    SetHovered(nullptr);
+}
+
+bool ControlHost::RightClick(float x, float y)
+{
+    if (Control* hit = Hit(x, y))
+    {
+        hit->OnRightClick();
+        return true;
+    }
+    return false;
+}
+
+bool ControlHost::Wheel(float x, float y, float notches)
+{
+    Control* hit = Hit(x, y);
+    return hit && hit->OnWheel(notches);
+}
+
+// --- IconButton --------------------------------------------------------------
+
+IconButton::IconButton(const Ui& ui, wchar_t glyph, float diameterDip, float glyphDip) : Control(ui), m_glyph(glyph)
+{
+    const float diameter = ui.EvenPx(diameterDip);
+    m_highlight = RoundedRect(ui, diameter, diameter, diameter / 2.0f, White(0.16f));
+    m_highlight.visual.Opacity(0.0f);
+    m_root.Children().InsertAtTop(m_highlight.visual);
+
+    for (auto& label : m_glyphs)
+    {
+        label = std::make_unique<Label>(ui, glyphDip, DWRITE_FONT_WEIGHT_NORMAL, true);
+        m_root.Children().InsertAtTop(label->Visual());
+    }
+    m_glyphs[0]->SetText(std::wstring(1, glyph));
+    m_glyphs[0]->Visual().Opacity(kGlyphRestOpacity);
+    m_glyphs[1]->Visual().Opacity(0.0f);
+    SetBounds(0.0f, 0.0f, diameter, diameter);
+}
+
+void IconButton::Layout()
+{
+    m_highlight.Resize(m_width, m_height, std::min(m_width, m_height) / 2.0f);
+    for (auto& label : m_glyphs)
+    {
+        CenterGlyph(*label);
+    }
+}
+
+void IconButton::CenterGlyph(Label& glyph)
+{
+    glyph.SetPosition(std::round((m_width - glyph.Width()) / 2.0f), std::round((m_height - glyph.Height()) / 2.0f));
+    const auto size = glyph.Visual().Size();
+    glyph.Visual().CenterPoint({ size.x / 2.0f, size.y / 2.0f, 0.0f });  // turn and shrink around its middle
+}
+
+float IconButton::RestingGlyphOpacity() const
+{
+    return m_hovered ? 1.0f : kGlyphRestOpacity;
+}
+
+void IconButton::OnHoverChanged(bool hovered)
+{
+    m_hovered = hovered;
+    const int fade = m_ui.motion->hoverFadeMs;
+    Motion::EaseTo(m_highlight.visual, L"Opacity", m_pressed ? 1.0f : hovered ? 0.7f : 0.0f, fade);
+    Motion::EaseTo(m_glyphs[m_front]->Visual(), L"Opacity", RestingGlyphOpacity(), fade);
+}
+
+void IconButton::OnPressChanged(bool pressed)
+{
+    m_pressed = pressed;
+    Motion::SpringTo(m_root, L"Scale", pressed ? float3{ 0.93f, 0.93f, 1.0f } : float3{ 1.0f, 1.0f, 1.0f }, m_ui.motion->press);
+    Motion::EaseTo(m_highlight.visual, L"Opacity", pressed ? 1.0f : m_hovered ? 0.7f : 0.0f, m_ui.motion->hoverFadeMs / 2);
+}
+
+void IconButton::OnClick()
+{
+    if (onClick)
+    {
+        onClick();
+    }
+}
+
+void IconButton::OnRightClick()
+{
+    if (onRightClick)
+    {
+        onRightClick();
+    }
+}
+
+void IconButton::SetGlyph(wchar_t glyph, bool morph)
+{
+    if (glyph == m_glyph)
+    {
+        return;
+    }
+    m_glyph = glyph;
+    const int outgoing = m_front;
+    const int incoming = 1 - m_front;
+    m_front = incoming;
+
+    Label& next = *m_glyphs[incoming];
+    next.SetText(std::wstring(1, glyph));
+    CenterGlyph(next);
+    const auto in = next.Visual();
+    const auto out = m_glyphs[outgoing]->Visual();
+    const Spring& spring = m_ui.motion->toggle;
+
+    // If the incoming icon finished leaving a while ago, start it turned back
+    // and small. If it's still on its way out (fast double clicks), it simply
+    // turns around from wherever it is, so nothing ever jumps.
+    if (morph && GetTickCount64() - m_hiddenAt[incoming] > 300)
+    {
+        in.StopAnimation(L"Scale");
+        in.StopAnimation(L"RotationAngleInDegrees");
+        in.Scale({ 0.5f, 0.5f, 1.0f });
+        in.RotationAngleInDegrees(-35.0f);
+    }
+    Motion::EaseTo(out, L"Opacity", 0.0f, 110);
+    Motion::EaseTo(in, L"Opacity", RestingGlyphOpacity(), 160, 40);
+    if (morph)
+    {
+        Motion::SpringTo(out, L"Scale", float3{ 0.5f, 0.5f, 1.0f }, spring);
+        Motion::SpringTo(out, L"RotationAngleInDegrees", 35.0f, spring);
+        Motion::SpringTo(in, L"Scale", float3{ 1.0f, 1.0f, 1.0f }, spring);
+        Motion::SpringTo(in, L"RotationAngleInDegrees", 0.0f, spring);
+    }
+    m_hiddenAt[outgoing] = GetTickCount64();
+}
+
+// --- ToggleSwitch ------------------------------------------------------------
+
+ToggleSwitch::ToggleSwitch(const Ui& ui) : m_ui(ui)
+{
+    m_width = ui.EvenPx(40.0f);
+    m_height = ui.EvenPx(22.0f);
+    m_pad = ui.Px(3.0f);
+    m_knobSize = m_height - 2.0f * m_pad;
+    m_knobStretched = m_knobSize + ui.Px(5.0f);
+
+    m_root = ui.compositor.CreateContainerVisual();
+    m_root.Size({ m_width, m_height });
+    const float radius = m_height / 2.0f;
+    m_off = RoundedRect(ui, m_width, m_height, radius, White(0.22f));
+    m_on = RoundedRect(ui, m_width, m_height, radius, ui.accent);
+    m_hover = RoundedRect(ui, m_width, m_height, radius, White(0.12f));
+    m_on.visual.Opacity(0.0f);
+    m_hover.visual.Opacity(0.0f);
+    m_root.Children().InsertAtTop(m_off.visual);
+    m_root.Children().InsertAtTop(m_on.visual);
+    m_root.Children().InsertAtTop(m_hover.visual);
+
+    m_knob = ui.compositor.CreateRoundedRectangleGeometry();
+    m_knob.CornerRadius({ m_knobSize / 2.0f, m_knobSize / 2.0f });
+    auto knobShape = ui.compositor.CreateSpriteShape(m_knob);
+    knobShape.FillBrush(ui.compositor.CreateColorBrush(White(1.0f)));
+    m_knobLayer = ui.compositor.CreateShapeVisual();
+    m_knobLayer.Size({ m_width, m_height });
+    m_knobLayer.Shapes().Append(knobShape);
+    m_root.Children().InsertAtTop(m_knobLayer);
+    PlaceKnob(false);
+}
+
+void ToggleSwitch::SetOn(bool on, bool animate)
+{
+    m_isOn = on;
+    if (animate)
+    {
+        Motion::EaseTo(m_on.visual, L"Opacity", on ? 1.0f : 0.0f, 180);
+    }
+    else
+    {
+        SetOpacityNow(m_on.visual, on ? 1.0f : 0.0f);
+    }
+    PlaceKnob(animate);
+}
+
+void ToggleSwitch::SetHovered(bool hovered)
+{
+    Motion::EaseTo(m_hover.visual, L"Opacity", hovered ? 1.0f : 0.0f, m_ui.motion->hoverFadeMs);
+}
+
+void ToggleSwitch::SetPressed(bool pressed)
+{
+    m_pressed = pressed;
+    PlaceKnob(true);
+}
+
+void ToggleSwitch::SetBusy(bool busy)
+{
+    if (busy == m_busy)
+    {
+        return;
+    }
+    m_busy = busy;
+    if (busy)
+    {
+        Motion::Pulse(m_knobLayer, L"Opacity", 1.0f, 0.45f, 900);
+    }
+    else
+    {
+        m_knobLayer.StopAnimation(L"Opacity");
+        Motion::EaseTo(m_knobLayer, L"Opacity", 1.0f, 150);
+    }
+}
+
+void ToggleSwitch::PlaceKnob(bool animate)
+{
+    // While held, the knob stretches towards the side it would slide to.
+    const float width = m_pressed ? m_knobStretched : m_knobSize;
+    const float x = m_isOn ? m_width - m_pad - width : m_pad;
+    if (animate)
+    {
+        Motion::SpringTo(m_knob, L"Offset", float2{ x, m_pad }, m_ui.motion->toggle);
+        Motion::SpringTo(m_knob, L"Size", float2{ width, m_knobSize }, m_ui.motion->toggle);
+    }
+    else
+    {
+        m_knob.StopAnimation(L"Offset");
+        m_knob.StopAnimation(L"Size");
+        m_knob.Offset({ x, m_pad });
+        m_knob.Size({ width, m_knobSize });
+    }
+}
+
+// --- ToggleTile --------------------------------------------------------------
+
+ToggleTile::ToggleTile(const Ui& ui, wchar_t glyph, std::wstring_view title)
+    : Control(ui),
+      m_icon(ui, 15.0f, DWRITE_FONT_WEIGHT_NORMAL, true),
+      m_title(ui, 13.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD),
+      m_subtitle(ui, 11.5f),
+      m_switch(ui)
+{
+    m_background = RoundedRect(ui, 1.0f, 1.0f, 1.0f, White(0.08f));
+    m_hoverLayer = RoundedRect(ui, 1.0f, 1.0f, 1.0f, White(0.06f));
+    m_hoverLayer.visual.Opacity(0.0f);
+    const float iconSize = ui.EvenPx(32.0f);
+    m_iconOff = RoundedRect(ui, iconSize, iconSize, iconSize / 2.0f, White(0.14f));
+    m_iconOn = RoundedRect(ui, iconSize, iconSize, iconSize / 2.0f, ui.accent);
+    m_iconOn.visual.Opacity(0.0f);
+
+    m_icon.SetText(std::wstring(1, glyph));
+    m_title.SetText(title);
+    m_subtitle.Visual().Opacity(0.6f);
+
+    for (const wuc::Visual& visual : { wuc::Visual(m_background.visual), wuc::Visual(m_hoverLayer.visual),
+                                       wuc::Visual(m_iconOff.visual), wuc::Visual(m_iconOn.visual),
+                                       wuc::Visual(m_icon.Visual()), wuc::Visual(m_title.Visual()),
+                                       wuc::Visual(m_subtitle.Visual()), wuc::Visual(m_switch.Visual()) })
+    {
+        m_root.Children().InsertAtTop(visual);
+    }
+}
+
+void ToggleTile::Layout()
+{
+    const float radius = m_ui.Px(14.0f);
+    m_background.Resize(m_width, m_height, radius);
+    m_hoverLayer.Resize(m_width, m_height, radius);
+
+    const float pad = m_ui.Px(12.0f);
+    const float iconSize = m_iconOff.visual.Size().x;
+    const float iconY = std::round((m_height - iconSize) / 2.0f);
+    m_iconOff.visual.Offset({ pad, iconY, 0.0f });
+    m_iconOn.visual.Offset({ pad, iconY, 0.0f });
+    m_icon.SetPosition(pad + std::round((iconSize - m_icon.Width()) / 2.0f), iconY + std::round((iconSize - m_icon.Height()) / 2.0f));
+
+    const float switchX = m_width - pad - m_switch.Width();
+    m_switch.Visual().Offset({ switchX, std::round((m_height - m_switch.Height()) / 2.0f), 0.0f });
+
+    const float textX = pad + iconSize + m_ui.Px(10.0f);
+    const float textWidth = std::max(0.0f, switchX - m_ui.Px(8.0f) - textX);
+    m_title.SetMaxWidth(textWidth);
+    m_subtitle.SetMaxWidth(textWidth);
+    const float textTop = std::round((m_height - m_title.Height() - m_subtitle.Height()) / 2.0f);
+    m_title.SetPosition(textX, textTop);
+    m_subtitle.SetPosition(textX, textTop + m_title.Height());
+}
+
+void ToggleTile::SetOn(bool on, bool animate)
+{
+    m_isOn = on;
+    m_switch.SetOn(on, animate);
+    if (animate)
+    {
+        Motion::EaseTo(m_iconOn.visual, L"Opacity", on ? 1.0f : 0.0f, 180);
+    }
+    else
+    {
+        SetOpacityNow(m_iconOn.visual, on ? 1.0f : 0.0f);
+    }
+}
+
+void ToggleTile::SetSubtitle(std::wstring_view text)
+{
+    m_subtitle.SetText(text);
+}
+
+void ToggleTile::OnHoverChanged(bool hovered)
+{
+    Motion::EaseTo(m_hoverLayer.visual, L"Opacity", hovered ? 1.0f : 0.0f, m_ui.motion->hoverFadeMs);
+    m_switch.SetHovered(hovered);
+}
+
+void ToggleTile::OnPressChanged(bool pressed)
+{
+    Motion::SpringTo(m_root, L"Scale", pressed ? float3{ 0.97f, 0.97f, 1.0f } : float3{ 1.0f, 1.0f, 1.0f }, m_ui.motion->press);
+    m_switch.SetPressed(pressed);
+}
+
+void ToggleTile::OnClick()
+{
+    SetOn(!m_isOn);
+    if (onToggle)
+    {
+        onToggle(m_isOn);
+    }
+}
+
+void ToggleTile::OnRightClick()
+{
+    if (onRightClick)
+    {
+        onRightClick();
+    }
+}
+
+// --- Segmented ---------------------------------------------------------------
+
+Segmented::Segmented(const Ui& ui, std::vector<std::wstring> options) : Control(ui), m_options(std::move(options))
+{
+    m_background = RoundedRect(ui, 1.0f, 1.0f, 1.0f, White(0.07f));
+    m_root.Children().InsertAtTop(m_background.visual);
+    for (size_t i = 0; i < m_options.size(); ++i)
+    {
+        m_highlights.emplace_back(ui, 1.0f, 1.0f, 1.0f, White(0.06f));
+        m_highlights.back().visual.Opacity(0.0f);
+        m_root.Children().InsertAtTop(m_highlights.back().visual);
+    }
+
+    m_selection = ui.compositor.CreateRoundedRectangleGeometry();
+    auto selectionShape = ui.compositor.CreateSpriteShape(m_selection);
+    selectionShape.FillBrush(ui.compositor.CreateColorBrush(White(0.2f)));
+    m_selectionLayer = ui.compositor.CreateShapeVisual();
+    m_selectionLayer.Shapes().Append(selectionShape);
+    m_root.Children().InsertAtTop(m_selectionLayer);
+
+    for (const auto& option : m_options)
+    {
+        auto label = std::make_unique<Label>(ui, 12.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+        label->SetText(option);
+        m_root.Children().InsertAtTop(label->Visual());
+        m_labels.push_back(std::move(label));
+    }
+}
+
+void Segmented::Layout()
+{
+    const float pad = m_ui.Px(3.0f);
+    const float inner = m_height - 2.0f * pad;
+    const float optionWidth = std::floor((m_width - 2.0f * pad) / static_cast<float>(m_options.size()));
+    m_background.Resize(m_width, m_height, m_height / 2.0f);
+    m_selectionLayer.Size({ m_width, m_height });
+    m_selection.CornerRadius({ inner / 2.0f, inner / 2.0f });
+    for (size_t i = 0; i < m_options.size(); ++i)
+    {
+        const float x = pad + optionWidth * static_cast<float>(i);
+        m_highlights[i].Resize(optionWidth, inner, inner / 2.0f);
+        m_highlights[i].visual.Offset({ x, pad, 0.0f });
+        Label& label = *m_labels[i];
+        label.SetMaxWidth(optionWidth - m_ui.Px(8.0f));
+        label.SetPosition(x + std::round((optionWidth - label.Width()) / 2.0f), std::round((m_height - label.Height()) / 2.0f));
+        const auto size = label.Visual().Size();
+        label.Visual().CenterPoint({ size.x / 2.0f, size.y / 2.0f, 0.0f });
+    }
+    PlaceSelection(false);
+}
+
+int Segmented::OptionAt(float x) const
+{
+    const float pad = m_ui.Px(3.0f);
+    const float optionWidth = (m_width - 2.0f * pad) / static_cast<float>(m_options.size());
+    return std::clamp(static_cast<int>((x - pad) / optionWidth), 0, static_cast<int>(m_options.size()) - 1);
+}
+
+void Segmented::PlaceSelection(bool animate)
+{
+    const float pad = m_ui.Px(3.0f);
+    const float optionWidth = std::floor((m_width - 2.0f * pad) / static_cast<float>(m_options.size()));
+    const float2 offset{ pad + optionWidth * static_cast<float>(m_selected), pad };
+    const float2 size{ optionWidth, m_height - 2.0f * pad };
+    if (animate)
+    {
+        Motion::SpringTo(m_selection, L"Offset", offset, m_ui.motion->toggle);
+        Motion::SpringTo(m_selection, L"Size", size, m_ui.motion->toggle);
+    }
+    else
+    {
+        m_selection.StopAnimation(L"Offset");
+        m_selection.StopAnimation(L"Size");
+        m_selection.Offset(offset);
+        m_selection.Size(size);
+    }
+    for (size_t i = 0; i < m_labels.size(); ++i)
+    {
+        const float opacity = static_cast<int>(i) == m_selected ? 1.0f : 0.65f;
+        if (animate)
+        {
+            Motion::EaseTo(m_labels[i]->Visual(), L"Opacity", opacity, 180);
+        }
+        else
+        {
+            SetOpacityNow(m_labels[i]->Visual(), opacity);
+        }
+    }
+}
+
+void Segmented::Select(int index, bool animate)
+{
+    index = std::clamp(index, 0, static_cast<int>(m_options.size()) - 1);
+    if (index != m_selected)
+    {
+        m_selected = index;
+        PlaceSelection(animate);
+    }
+}
+
+void Segmented::HighlightOption(int index)
+{
+    if (index == m_hoverOption)
+    {
+        return;
+    }
+    const int fade = m_ui.motion->hoverFadeMs;
+    if (m_hoverOption >= 0)
+    {
+        Motion::EaseTo(m_highlights[m_hoverOption].visual, L"Opacity", 0.0f, fade);
+    }
+    m_hoverOption = index;
+    if (index >= 0)
+    {
+        Motion::EaseTo(m_highlights[index].visual, L"Opacity", 1.0f, fade);
+    }
+}
+
+void Segmented::OnHoverChanged(bool hovered)
+{
+    if (!hovered)
+    {
+        HighlightOption(-1);
+    }
+}
+
+void Segmented::OnPointerMove(float x, float)
+{
+    HighlightOption(OptionAt(x));
+}
+
+void Segmented::OnPointerDown(float x, float)
+{
+    m_pressOption = OptionAt(x);
+    Motion::SpringTo(m_labels[m_pressOption]->Visual(), L"Scale", float3{ 0.92f, 0.92f, 1.0f }, m_ui.motion->press);
+}
+
+void Segmented::OnPointerDrag(float x, float)
+{
+    // The press follows the pointer between options, like iOS.
+    const int option = OptionAt(x);
+    if (m_pressOption >= 0 && option != m_pressOption)
+    {
+        Motion::SpringTo(m_labels[m_pressOption]->Visual(), L"Scale", float3{ 1.0f, 1.0f, 1.0f }, m_ui.motion->press);
+        m_pressOption = option;
+        Motion::SpringTo(m_labels[option]->Visual(), L"Scale", float3{ 0.92f, 0.92f, 1.0f }, m_ui.motion->press);
+    }
+    HighlightOption(option);
+}
+
+void Segmented::OnPressChanged(bool pressed)
+{
+    if (!pressed && m_pressOption >= 0)
+    {
+        Motion::SpringTo(m_labels[m_pressOption]->Visual(), L"Scale", float3{ 1.0f, 1.0f, 1.0f }, m_ui.motion->press);
+    }
+}
+
+void Segmented::OnPointerUp(bool inside)
+{
+    const int option = m_pressOption;
+    m_pressOption = -1;
+    if (inside && option >= 0 && option != m_selected)
+    {
+        Select(option);
+        if (onChange)
+        {
+            onChange(option);
+        }
+    }
+}
+
+// --- Slider ------------------------------------------------------------------
+
+Slider::Slider(const Ui& ui) : Control(ui)
+{
+    m_thumbSize = ui.EvenPx(16.0f);
+    m_thin = ui.Px(5.0f);
+    m_thick = ui.Px(8.0f);
+
+    // Two numbers drive everything: Value (0..1) and the track Thickness.
+    // The fill, the thumb and the track outline follow them through
+    // expressions, so one spring moves all of them together.
+    m_properties = ui.compositor.CreatePropertySet();
+    m_properties.InsertScalar(L"Value", 0.0f);
+    m_properties.InsertScalar(L"Thickness", m_thin);
+
+    m_track = ui.compositor.CreateContainerVisual();
+    m_trackShape = ui.compositor.CreateRoundedRectangleGeometry();
+    m_track.Clip(ui.compositor.CreateGeometricClip(m_trackShape));
+    m_trackBackground = ui.compositor.CreateSpriteVisual();
+    m_trackBackground.Brush(ui.compositor.CreateColorBrush(White(0.2f)));
+    m_fill = ui.compositor.CreateSpriteVisual();
+    m_fill.Brush(ui.compositor.CreateColorBrush(White(0.92f)));
+    m_track.Children().InsertAtTop(m_trackBackground);
+    m_track.Children().InsertAtTop(m_fill);
+    m_root.Children().InsertAtTop(m_track);
+
+    auto thumbShape = ui.compositor.CreateEllipseGeometry();
+    thumbShape.Center({ m_thumbSize / 2.0f, m_thumbSize / 2.0f });
+    thumbShape.Radius({ m_thumbSize / 2.0f - 0.5f, m_thumbSize / 2.0f - 0.5f });
+    auto thumb = ui.compositor.CreateSpriteShape(thumbShape);
+    thumb.FillBrush(ui.compositor.CreateColorBrush(White(1.0f)));
+    thumb.StrokeBrush(ui.compositor.CreateColorBrush(Black(0.25f)));
+    thumb.StrokeThickness(1.0f);
+    m_thumb = ui.compositor.CreateShapeVisual();
+    m_thumb.Size({ m_thumbSize, m_thumbSize });
+    m_thumb.Shapes().Append(thumb);
+    m_thumb.AnchorPoint({ 0.5f, 0.5f });
+    m_thumb.CenterPoint({ m_thumbSize / 2.0f, m_thumbSize / 2.0f, 0.0f });
+    m_thumb.Scale({ 0.8f, 0.8f, 1.0f });
+    m_root.Children().InsertAtTop(m_thumb);
+}
+
+void Slider::Layout()
+{
+    const auto compositor = m_ui.compositor;
+    m_track.Size({ m_width, m_height });
+    m_trackBackground.Size({ m_width, m_height });
+    m_fill.Size({ m_width, m_height });
+
+    auto expression = [&](const wchar_t* formula)
+    {
+        auto animation = compositor.CreateExpressionAnimation(formula);
+        animation.SetReferenceParameter(L"p", m_properties);
+        animation.SetScalarParameter(L"W", m_width);
+        animation.SetScalarParameter(L"H", m_height);
+        animation.SetScalarParameter(L"T", m_thumbSize);
+        return animation;
+    };
+    // The thumb's center travels from T/2 to W - T/2; the fill ends at it.
+    m_trackShape.StartAnimation(L"Offset", expression(L"Vector2(0, (H - p.Thickness) / 2)"));
+    m_trackShape.StartAnimation(L"Size", expression(L"Vector2(W, p.Thickness)"));
+    m_trackShape.StartAnimation(L"CornerRadius", expression(L"Vector2(p.Thickness / 2, p.Thickness / 2)"));
+    m_fill.StartAnimation(L"Scale", expression(L"Vector3((T / 2 + p.Value * (W - T)) / W, 1, 1)"));
+    m_thumb.StartAnimation(L"Offset", expression(L"Vector3(T / 2 + p.Value * (W - T), H / 2, 0)"));
+}
+
+float Slider::ValueAt(float x) const
+{
+    return std::clamp((x - m_thumbSize / 2.0f) / std::max(1.0f, m_width - m_thumbSize), 0.0f, 1.0f);
+}
+
+void Slider::Show(float value, bool animate)
+{
+    if (animate)
+    {
+        Motion::SpringTo(m_properties, L"Value", value, m_ui.motion->slider);
+    }
+    else
+    {
+        m_properties.StopAnimation(L"Value");
+        m_properties.InsertScalar(L"Value", value);
+    }
+}
+
+void Slider::SetValue(float value, bool animate)
+{
+    value = std::clamp(value, 0.0f, 1.0f);
+    if (m_dragging || std::abs(value - m_value) < 0.0005f)
+    {
+        return;
+    }
+    m_value = value;
+    Show(value, animate);
+}
+
+void Slider::UpdateThumb()
+{
+    const float scale = m_dragging ? 1.05f : m_hovered ? 1.0f : 0.8f;
+    Motion::SpringTo(m_thumb, L"Scale", float3{ scale, scale, 1.0f }, m_ui.motion->press);
+}
+
+void Slider::OnHoverChanged(bool hovered)
+{
+    m_hovered = hovered;
+    Motion::SpringTo(m_properties, L"Thickness", hovered || m_dragging ? m_thick : m_thin, m_ui.motion->slider);
+    UpdateThumb();
+}
+
+void Slider::OnPressChanged(bool pressed)
+{
+    m_dragging = pressed;
+    UpdateThumb();
+    if (!pressed && !m_hovered)
+    {
+        Motion::SpringTo(m_properties, L"Thickness", m_thin, m_ui.motion->slider);
+    }
+}
+
+void Slider::OnPointerDown(float x, float)
+{
+    // A click on the track glides there.
+    m_dragging = true;
+    m_value = ValueAt(x);
+    Show(m_value, true);
+    if (onChange)
+    {
+        onChange(m_value, false);
+    }
+}
+
+void Slider::OnPointerDrag(float x, float)
+{
+    // Dragging follows the mouse exactly: no animation, no delay.
+    const float value = ValueAt(x);
+    if (value != m_value)
+    {
+        m_value = value;
+        Show(value, false);
+        if (onChange)
+        {
+            onChange(value, false);
+        }
+    }
+}
+
+void Slider::OnPointerUp(bool)
+{
+    m_dragging = false;
+    if (onChange)
+    {
+        onChange(m_value, true);
+    }
+}
+
+bool Slider::OnWheel(float notches)
+{
+    const float value = std::clamp(m_value + notches * 0.04f, 0.0f, 1.0f);
+    if (value != m_value)
+    {
+        m_value = value;
+        Show(value, true);
+        if (onChange)
+        {
+            onChange(value, true);
+        }
+    }
+    return true;
+}

@@ -1,7 +1,8 @@
 // Island settings. Save this file and Island picks up the change within a
 // moment; no restart needed. "//" comments are allowed. If something here is
 // wrong, Island keeps the previous settings and writes the error to the log
-// (tray icon -> Open log).
+// (tray icon -> Open log). Tip: tray icon -> "Keep open (for tuning)" holds
+// the control center open while you try values.
 {
   "games": {
     // Exe names that always hide the island while they're the app in front.
@@ -12,5 +13,43 @@
 
     // How long (ms) nothing may be fullscreen before the island comes back.
     "showDelayMs": 500
+  },
+
+  // Sizes in DIPs: 1 DIP = 1 pixel at 100 % display scale, 1.25 px at 125 %.
+  "layout": {
+    "idleWidth": 200,      // the resting pill
+    "idleHeight": 34,
+    "topGap": 6,           // space between the top of the screen and the island
+    "slimWidth": 150,      // the line shown over maximized windows
+    "slimHeight": 4,
+    "peekWidth": 340,      // on hover
+    "peekHeight": 56,
+    "panelWidth": 400,     // the control center (its height follows its content)
+    "panelRadius": 28
+  },
+
+  "glass": {
+    "tintOpacity": 0.55,   // dark tint over the blur: 0 = clear, 1 = solid
+    "saturation": 1.6,     // colour boost of what's behind (1 = unchanged)
+    "brightness": 1.0,     // brightness of what's behind (1 = unchanged)
+    "noiseOpacity": 0.035, // faint grain that hides banding in the blur
+    "rimOpacity": 1.0,     // the thin light edge along the outline
+    "accent": "auto"       // "on" colour: "auto" (Windows' accent, blue if that's grey) or "#RRGGBB"
+  },
+
+  // Springs: dampingRatio 1 = no bounce, lower = a little overshoot;
+  // periodMs smaller = faster. Times are in milliseconds.
+  "motion": {
+    "morph":  { "dampingRatio": 0.78, "periodMs": 65 },  // the island changing shape
+    "press":  { "dampingRatio": 0.55, "periodMs": 35 },  // buttons shrinking and springing back
+    "toggle": { "dampingRatio": 0.72, "periodMs": 45 },  // toggle knobs, segmented selection
+    "slider": { "dampingRatio": 0.9,  "periodMs": 45 },  // slider glides
+    "hoverFadeMs": 120,           // hover highlights fading in and out
+    "contentFadeOutMs": 90,       // old content disappearing during a morph
+    "contentFadeInMs": 200,       // new content appearing...
+    "contentFadeInDelayMs": 80,   // ...this long into the morph
+    "hoverIntentMs": 150,         // rest the mouse this long to open Peek
+    "leaveDelayMs": 300,          // Peek closes this long after the mouse leaves
+    "expandedLeaveDelayMs": 500   // the same for the control center
   }
 }

@@ -13,6 +13,7 @@ struct TrayItem
     std::wstring text;
     std::function<void()> onClick;
     bool separator = false;
+    bool checked = false;
 
     static TrayItem Separator() { return { {}, nullptr, true }; }
 };

@@ -105,6 +105,21 @@ namespace
             }
         }
 
+        void String(const wchar_t* key, std::wstring& target) const
+        {
+            if (auto value = Find(key, json::JsonValueType::String))
+            {
+                target = value.GetString();
+            }
+        }
+
+        void SpringValue(const wchar_t* key, Spring& target) const
+        {
+            const Reader spring = Child(key);
+            spring.Number(L"dampingRatio", target.dampingRatio, 0.1f, 2.0f);
+            spring.Number(L"periodMs", target.periodMs, 5.0f, 1000.0f);
+        }
+
         void LowerCaseStrings(const wchar_t* key, std::vector<std::wstring>& target) const
         {
             if (auto value = Find(key, json::JsonValueType::Array))
@@ -216,6 +231,41 @@ bool ParseSettings(std::wstring_view text, Settings& out, std::wstring& message)
         const Reader games = settings.Child(L"games");
         games.LowerCaseStrings(L"blocklist", out.games.blocklist);
         games.Number(L"showDelayMs", out.games.showDelayMs, 0, 5000);
+
+        LayoutSettings& l = out.layout;
+        const Reader layout = settings.Child(L"layout");
+        layout.Number(L"idleWidth", l.idleWidth, 60.0f, 600.0f);
+        layout.Number(L"idleHeight", l.idleHeight, 12.0f, 80.0f);
+        layout.Number(L"topGap", l.topGap, 0.0f, 40.0f);
+        layout.Number(L"slimWidth", l.slimWidth, 20.0f, 600.0f);
+        layout.Number(L"slimHeight", l.slimHeight, 2.0f, 20.0f);
+        layout.Number(L"peekWidth", l.peekWidth, 200.0f, 800.0f);
+        layout.Number(L"peekHeight", l.peekHeight, 36.0f, 120.0f);
+        layout.Number(L"panelWidth", l.panelWidth, 300.0f, 800.0f);
+        layout.Number(L"panelRadius", l.panelRadius, 0.0f, 60.0f);
+
+        GlassSettings& g = out.glass;
+        const Reader glass = settings.Child(L"glass");
+        glass.Number(L"tintOpacity", g.tintOpacity, 0.0f, 1.0f);
+        glass.Number(L"saturation", g.saturation, 0.0f, 3.0f);
+        glass.Number(L"brightness", g.brightness, 0.2f, 2.0f);
+        glass.Number(L"noiseOpacity", g.noiseOpacity, 0.0f, 0.3f);
+        glass.Number(L"rimOpacity", g.rimOpacity, 0.0f, 3.0f);
+        glass.String(L"accent", g.accent);
+
+        MotionSettings& m = out.motion;
+        const Reader motion = settings.Child(L"motion");
+        motion.SpringValue(L"morph", m.morph);
+        motion.SpringValue(L"press", m.press);
+        motion.SpringValue(L"toggle", m.toggle);
+        motion.SpringValue(L"slider", m.slider);
+        motion.Number(L"hoverFadeMs", m.hoverFadeMs, 0, 2000);
+        motion.Number(L"contentFadeOutMs", m.contentFadeOutMs, 0, 2000);
+        motion.Number(L"contentFadeInMs", m.contentFadeInMs, 0, 2000);
+        motion.Number(L"contentFadeInDelayMs", m.contentFadeInDelayMs, 0, 2000);
+        motion.Number(L"hoverIntentMs", m.hoverIntentMs, 0, 2000);
+        motion.Number(L"leaveDelayMs", m.leaveDelayMs, 0, 5000);
+        motion.Number(L"expandedLeaveDelayMs", m.expandedLeaveDelayMs, 0, 5000);
     }
     catch (const winrt::hresult_error& error)
     {

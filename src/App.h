@@ -2,6 +2,8 @@
 
 #include <windows.h>
 
+#include <string_view>
+
 #include "IslandWindow.h"
 #include "platform/Settings.h"
 #include "platform/Tray.h"
@@ -16,7 +18,8 @@ public:
     App(const App&) = delete;
     App& operator=(const App&) = delete;
 
-    bool Start(HINSTANCE instance);
+    // commandLine may hold "--pose idle|peek|expanded|demo" (see AppPoseMessage).
+    bool Start(HINSTANCE instance, std::wstring_view commandLine);
 
 private:
     std::vector<TrayItem> BuildTrayMenu();

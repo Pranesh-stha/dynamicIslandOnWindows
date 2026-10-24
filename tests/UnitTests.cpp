@@ -5,12 +5,21 @@
 
 #include <windows.h>
 #include <Unknwn.h>
+#include <DispatcherQueue.h>
 
 #include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.System.h>
 
+#include <cmath>
 #include <cstdio>
+#include <map>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "StateMachine.h"
 #include "platform/Settings.h"
+#include "render/Widgets.h"
 #include "services/WindowClassifier.h"
 
 namespace
@@ -132,15 +141,317 @@ namespace
         // Out-of-range numbers are clamped.
         CHECK(ParseSettings(LR"({ "games": { "showDelayMs": 999999 } })", settings, message));
         CHECK(settings.games.showDelayMs == 5000);
+
+        // Springs, accent colour and layout sections.
+        CHECK(ParseSettings(LR"({ "motion": { "morph": { "dampingRatio": 0.5, "periodMs": 80 } },
+                                  "glass": { "accent": "#FF8800" }, "layout": { "idleWidth": 9999 } })", settings, message));
+        CHECK(settings.motion.morph.dampingRatio == 0.5f && settings.motion.morph.periodMs == 80.0f);
+        CHECK(settings.motion.press.periodMs == MotionSettings{}.press.periodMs);
+        CHECK(settings.glass.accent == L"#FF8800");
+        CHECK(settings.layout.idleWidth == 600.0f);
+    }
+
+    // Records what the state machine asks for, instead of real Windows timers.
+    struct FakeHost : StateMachine::Host
+    {
+        std::map<IslandTimer, int> timers;  // running timers and their delays
+        std::vector<std::pair<IslandState, IslandState>> transitions;
+
+        void StartTimer(IslandTimer timer, int milliseconds) override { timers[timer] = milliseconds; }
+        void StopTimer(IslandTimer timer) override { timers.erase(timer); }
+        void EnterState(IslandState from, IslandState to) override { transitions.push_back({ from, to }); }
+        bool Running(IslandTimer timer) const { return timers.count(timer) != 0; }
+    };
+
+    // Lets a timer go off, as Windows would, if it's running.
+    void Fire(StateMachine& machine, const FakeHost& host, IslandTimer timer)
+    {
+        if (host.Running(timer))
+        {
+            machine.TimerElapsed(timer);
+        }
+    }
+
+    void TestStateMachine()
+    {
+        {
+            // Starts hidden; comes back after the show delay, or at once on request.
+            FakeHost host;
+            StateMachine machine(host);
+            CHECK(machine.State() == IslandState::Hidden);
+            machine.FullscreenChanged(false);
+            CHECK(host.Running(IslandTimer::Show) && host.timers[IslandTimer::Show] == 500);
+            CHECK(machine.State() == IslandState::Hidden);
+            Fire(machine, host, IslandTimer::Show);
+            CHECK(machine.State() == IslandState::Idle);
+
+            FakeHost otherHost;
+            StateMachine immediate(otherHost);
+            immediate.FullscreenChanged(false, true);
+            CHECK(immediate.State() == IslandState::Idle);
+        }
+        {
+            // Hover opens Peek only after the mouse rests; a quick pass-over doesn't.
+            FakeHost host;
+            StateMachine machine(host);
+            machine.FullscreenChanged(false, true);
+            machine.PointerEntered();
+            CHECK(host.Running(IslandTimer::HoverIntent) && host.timers[IslandTimer::HoverIntent] == 150);
+            machine.PointerLeft();
+            CHECK(!host.Running(IslandTimer::HoverIntent));
+            CHECK(machine.State() == IslandState::Idle);
+
+            machine.PointerEntered();
+            Fire(machine, host, IslandTimer::HoverIntent);
+            CHECK(machine.State() == IslandState::Peek);
+
+            // Leaving starts the leave delay; coming back cancels it.
+            machine.PointerLeft();
+            CHECK(host.Running(IslandTimer::Leave) && host.timers[IslandTimer::Leave] == 300);
+            machine.PointerEntered();
+            CHECK(!host.Running(IslandTimer::Leave));
+            machine.PointerLeft();
+            Fire(machine, host, IslandTimer::Leave);
+            CHECK(machine.State() == IslandState::Idle);
+        }
+        {
+            // A click opens the control center, which closes with its own, longer delay.
+            FakeHost host;
+            StateMachine machine(host);
+            machine.FullscreenChanged(false, true);
+            machine.PointerEntered();
+            machine.BackgroundClicked();
+            CHECK(machine.State() == IslandState::Expanded);
+            CHECK(!host.Running(IslandTimer::HoverIntent));
+            machine.PointerLeft();
+            CHECK(host.timers[IslandTimer::Leave] == 500);
+        }
+        {
+            // Dragging a slider out of the island doesn't close it; letting go outside does.
+            FakeHost host;
+            StateMachine machine(host);
+            machine.FullscreenChanged(false, true);
+            machine.PointerEntered();
+            machine.BackgroundClicked();
+            machine.PointerCaptured(true);
+            machine.PointerLeft();
+            CHECK(!host.Running(IslandTimer::Leave));
+            machine.PointerCaptured(false);
+            CHECK(host.Running(IslandTimer::Leave));
+            Fire(machine, host, IslandTimer::Leave);
+            CHECK(machine.State() == IslandState::Idle);
+        }
+        {
+            // Fullscreen hides at once from any state and cancels every timer.
+            FakeHost host;
+            StateMachine machine(host);
+            machine.FullscreenChanged(false, true);
+            machine.PointerEntered();
+            machine.BackgroundClicked();
+            machine.PointerLeft();
+            machine.FullscreenChanged(true);
+            CHECK(machine.State() == IslandState::Hidden);
+            CHECK(host.timers.empty());
+            CHECK(!machine.PointerInside());
+
+            // Fullscreen again during the show delay: the show timer is cancelled.
+            machine.FullscreenChanged(false);
+            machine.FullscreenChanged(true);
+            CHECK(!host.Running(IslandTimer::Show));
+            machine.TimerElapsed(IslandTimer::Show);  // a late timer must not show it
+            CHECK(machine.State() == IslandState::Hidden);
+        }
+        {
+            // Dragging a window over the island (Snap Layouts) doesn't open it,
+            // and neither does a drag that ends on it, until the mouse leaves.
+            FakeHost host;
+            StateMachine machine(host);
+            machine.FullscreenChanged(false, true);
+            machine.WindowDragChanged(true);
+            machine.PointerEntered();
+            CHECK(!host.Running(IslandTimer::HoverIntent));
+            machine.WindowDragChanged(false);
+            machine.TimerElapsed(IslandTimer::HoverIntent);
+            CHECK(machine.State() == IslandState::Idle);
+            machine.PointerLeft();
+            machine.PointerEntered();
+            CHECK(host.Running(IslandTimer::HoverIntent));
+
+            // A hover timer that fires after the mouse already left does nothing.
+            machine.PointerLeft();
+            machine.TimerElapsed(IslandTimer::HoverIntent);
+            CHECK(machine.State() == IslandState::Idle);
+        }
+        {
+            // Pinned (--pose, "Keep open"): leaving doesn't close; unpinning outside does.
+            FakeHost host;
+            StateMachine machine(host);
+            machine.FullscreenChanged(false, true);
+            machine.SetPinned(true);
+            machine.ShowDirectly(IslandState::Peek);
+            CHECK(machine.State() == IslandState::Peek);
+            machine.PointerEntered();
+            machine.PointerLeft();
+            CHECK(!host.Running(IslandTimer::Leave));
+            machine.SetPinned(false);
+            CHECK(host.Running(IslandTimer::Leave));
+
+            // Opening from the tray without the mouse on the island closes after a while.
+            machine.OpenExpanded(4000);
+            CHECK(machine.State() == IslandState::Expanded);
+            CHECK(host.timers[IslandTimer::Leave] == 4000);
+        }
+    }
+
+    // A control that writes down every event it gets.
+    struct FakeControl : Control
+    {
+        FakeControl(const Ui& ui, bool keepsPress) : Control(ui), keepsPressOutside(keepsPress) {}
+        std::wstring events;
+        bool keepsPressOutside;
+
+        void OnHoverChanged(bool hovered) override { events += hovered ? L"H" : L"h"; }
+        void OnPressChanged(bool pressed) override { events += pressed ? L"P" : L"p"; }
+        void OnClick() override { events += L"C"; }
+        void OnPointerUp(bool inside) override { events += inside ? L"U" : L"u"; Control::OnPointerUp(inside); }
+        void OnRightClick() override { events += L"R"; }
+        bool OnWheel(float) override { events += L"W"; return true; }
+        bool KeepsPressOutside() const override { return keepsPressOutside; }
+    };
+
+    void TestControls(const Ui& ui)
+    {
+        {
+            // Hover, press, release inside = click. Feedback on press, action on release.
+            FakeControl button(ui, false);
+            button.SetBounds(10, 10, 40, 40);
+            ControlHost host;
+            host.Add(button);
+            host.PointerMove(5, 5);
+            CHECK(button.events.empty());
+            host.PointerMove(20, 20);
+            CHECK(button.events == L"H");
+            CHECK(host.PointerDown(20, 20));
+            CHECK(button.events == L"HP");
+            host.PointerUp(21, 21);
+            CHECK(button.events == L"HPpUC");
+
+            // Dragging off a button releases its pressed look and cancels the click.
+            button.events.clear();
+            host.PointerDown(20, 20);
+            host.PointerMove(80, 80);
+            host.PointerUp(80, 80);
+            CHECK(button.events == L"Pphu");  // pressed, unpressed on leaving, hover gone, released outside: no C
+
+            // Missing every control: the press isn't taken (it's a click on the island itself).
+            CHECK(!host.PointerDown(100, 100));
+            CHECK(!host.Pressing());
+
+            // Right-click and wheel go to the control under the pointer.
+            button.events.clear();
+            CHECK(host.RightClick(20, 20));
+            CHECK(host.Wheel(20, 20, 1.0f));
+            CHECK(!host.Wheel(100, 100, 1.0f));
+            CHECK(button.events == L"RW");
+
+            // Leaving the island clears the hover (no highlight left stuck on).
+            host.PointerMove(20, 20);
+            button.events.clear();
+            host.PointerLeave();
+            CHECK(button.events == L"h");
+
+            // A disabled control can't be hovered or pressed.
+            button.SetEnabled(false);
+            CHECK(!host.PointerDown(20, 20));
+        }
+        {
+            // A slider keeps its press when dragged outside, and releasing
+            // outside still finishes the drag.
+            FakeControl slider(ui, true);
+            slider.SetBounds(0, 0, 100, 20);
+            ControlHost host;
+            host.Add(slider);
+            host.PointerMove(50, 10);
+            host.PointerDown(50, 10);
+            host.PointerMove(300, 10);
+            host.PointerUp(300, 10);
+            CHECK(slider.events == L"HPphu");  // hover ends too, since the pointer is outside
+
+            // Losing the mouse mid-press (e.g. a system dialog) ends the press without a click.
+            slider.events.clear();
+            host.PointerMove(50, 10);
+            host.PointerDown(50, 10);
+            host.CancelPress();
+            CHECK(slider.events == L"HPpuh");
+        }
+        {
+            // The real slider: positions map to values, dragging reports
+            // non-final values, release reports the final one, and changes
+            // from outside are ignored while dragging (no jitter, PLAN.md D9).
+            Slider slider(ui);
+            const float thumb = ui.EvenPx(16.0f);
+            slider.SetBounds(0, 0, 216, 24);
+            std::vector<std::pair<float, bool>> changes;
+            slider.onChange = [&](float value, bool final) { changes.push_back({ value, final }); };
+            ControlHost host;
+            host.Add(slider);
+
+            host.PointerMove(thumb / 2, 12);
+            host.PointerDown(thumb / 2, 12);  // the thumb's leftmost position = 0
+            CHECK(std::abs(slider.Value()) < 0.001f);
+            host.PointerMove(108, 12);  // the middle
+            CHECK(std::abs(slider.Value() - 0.5f) < 0.001f);
+            slider.SetValue(0.9f);  // e.g. the volume keys, while dragging: ignored
+            CHECK(std::abs(slider.Value() - 0.5f) < 0.001f);
+            host.PointerMove(500, 12);  // far outside: clamps to 1
+            CHECK(slider.Value() == 1.0f);
+            host.PointerUp(500, 12);
+            CHECK(!changes.empty() && changes.back().second && changes.back().first == 1.0f);
+            bool anyEarlyFinal = false;
+            for (size_t i = 0; i + 1 < changes.size(); ++i)
+            {
+                anyEarlyFinal |= changes[i].second;
+            }
+            CHECK(!anyEarlyFinal);
+
+            // After the drag, outside changes apply again; the wheel nudges and is final.
+            slider.SetValue(0.25f, false);
+            CHECK(slider.Value() == 0.25f);
+            changes.clear();
+            host.Wheel(108, 12, 1.0f);
+            CHECK(changes.size() == 1 && changes[0].second && std::abs(changes[0].first - 0.29f) < 0.001f);
+        }
+    }
+
+    // The compositor needs a dispatcher queue on its thread, as in the app.
+    winrt::Windows::System::DispatcherQueueController CreateDispatcherQueue()
+    {
+        DispatcherQueueOptions options{ sizeof(options), DQTYPE_THREAD_CURRENT, DQTAT_COM_STA };
+        winrt::Windows::System::DispatcherQueueController controller{ nullptr };
+        winrt::check_hresult(CreateDispatcherQueueController(options,
+            reinterpret_cast<ABI::Windows::System::IDispatcherQueueController**>(winrt::put_abi(controller))));
+        return controller;
     }
 }
 
 int main()
 {
-    winrt::init_apartment();
+    winrt::init_apartment(winrt::apartment_type::single_threaded);
 
     TestClassifier();
     TestSettings();
+    TestStateMachine();
+
+    // Controls need a real compositor (no window: nothing is shown).
+    const auto queue = CreateDispatcherQueue();
+    const MotionSettings motion;
+    const LayoutSettings layout;
+    Ui ui;
+    ui.compositor = winrt::Windows::UI::Composition::Compositor();
+    ui.motion = &motion;
+    ui.layout = &layout;
+    ui.scale = 1.25f;
+    TestControls(ui);
 
     std::printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures;

@@ -72,7 +72,7 @@ int WINAPI wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE, _In_ PWSTR comm
         auto dispatcherQueue = CreateDispatcherQueueForThisThread();
 
         App app;
-        if (!app.Start(instance))
+        if (!app.Start(instance, commandLine))
         {
             return 1;
         }

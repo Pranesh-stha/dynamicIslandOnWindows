@@ -39,7 +39,16 @@ endfunction()
 add_library(IslandCore STATIC
     src/App.cpp
     src/IslandWindow.cpp
+    src/StateMachine.cpp
+    src/render/Effects.cpp
+    src/render/Graphics.cpp
     src/render/IslandVisuals.cpp
+    src/render/Motion.cpp
+    src/render/Widgets.cpp
+    src/views/ControlKitDemo.cpp
+    src/views/IdleView.cpp
+    src/views/PeekView.cpp
+    src/views/View.cpp
     src/platform/Log.cpp
     src/platform/Settings.cpp
     src/platform/Tray.cpp
@@ -52,6 +61,10 @@ target_link_libraries(IslandCore PUBLIC
     CoreMessaging   # CreateDispatcherQueueController
     dwmapi          # DwmSetWindowAttribute
     shcore          # GetDpiForMonitor
+    d3d11 dxgi      # the GPU device that draws text and images
+    d2d1 dwrite     # Direct2D (drawing) and DirectWrite (text)
+    dxguid          # IDs of the Direct2D effects the glass uses
+    windowscodecs   # WIC: decoding album artwork
 )
 
 # WIN32 = a windowed app (entry point wWinMain, no console window).

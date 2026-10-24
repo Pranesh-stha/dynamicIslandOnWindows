@@ -4,9 +4,9 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 
 ## 0. Current status (read this first)
 
-- **Current phase:** Phase 2 is built and verified: the island hides for anything fullscreen on the primary monitor. **Next: Phase 3, "Motion & glass."**
-- Hands-on checks are left for you in the Phase 1 and Phase 2 lists (real games, PresentMon). It doesn't start at login yet (Phase 7).
-- **Last updated:** 2026-10-24 07:03 NPT (UTC+05:45)
+- **Current phase:** Phase 3 is built and verified: glass pill, spring morphs Idle ↔ Peek ↔ Expanded, slim line, and the control kit (tray → "Control kit demo"). **Next: Phase 4, "Now playing."**
+- Hands-on checks are left for you in the Phase 1–3 lists (real games, PresentMon, how the motion *feels*). It doesn't start at login yet (Phase 7).
+- **Last updated:** 2026-10-24 07:47 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
@@ -15,7 +15,8 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
   - The exe ends up in `build\Debug\Island.exe` or `build\Release\Island.exe`.
   - In VS Code, F5 closes any running island, builds the project and starts the debugger.
   - `Island.exe --quit` closes a running island. Launching a new copy replaces the old one.
-- **Tests:** `ctest --preset debug` (or `release`) runs the unit tests. `pwsh -File tests\fullscreen_test.ps1` runs the game-safety test with real windows (it clicks, so hands off the mouse for ~15 s).
+- **Tests:** `ctest --preset debug` (or `release`) runs the unit tests. `pwsh -File tests\fullscreen_test.ps1` runs the game-safety test with real windows (it clicks its own test windows, so hands off the mouse for ~15 s). `pwsh -File tests\visual_check.ps1` takes screenshots and measures the morphs *hands-free* (no mouse, no focus change).
+- **Poses:** `Island.exe --pose idle|peek|expanded|demo` holds the island in one state (for screenshots); tray → "Keep open (for tuning)" does the same while you edit settings.
 - **Log and settings:** the tray menu opens `config\settings.json` (edits apply live) and the log (`%LOCALAPPDATA%\Island\island.log`).
 - **Rule for every session:** after any meaningful change, add an entry at the top of the update log (§12) and refresh this section.
 
@@ -137,7 +138,7 @@ There is no setting to change; it just follows the primary monitor. With a colle
 
 - Use springs, not fixed-duration easing. Width, height and corner radius morph together.
 - Content crossfades: the old content fades out quickly, and the new content fades in partway through the morph with a slight scale-up.
-- **Interruptible:** if you reverse mid-animation, it continues from the current position *and speed*. It never snaps.
+- **Interruptible:** if you reverse mid-animation, it continues from the current position *and speed*. It never snaps. (Built: position yes; speed not yet, see Phase 3.)
 - Spring values live in `settings.json`, so we can tune the feel without recompiling.
 
 **Controls: hover and click animations (decided).** Every button, toggle, radio choice and slider animates smoothly and cleanly.
@@ -179,11 +180,16 @@ windowsUI/
     app.manifest             DPI awareness (Per-Monitor V2), Windows 10/11
     AppMessages.h            "Island.Quit" message shared between Island processes
     IslandWindow.*           the window: flags, placement, DPI, hit-testing, hide/show
-    StateMachine.*           Hidden / Idle / Peek / Expanded
+    StateMachine.*           Hidden / Idle / Peek / Expanded rules (unit-tested, no window)
     render/
-      IslandVisuals.*        visual tree, glass material, spring animations
-      Text.*                 DirectWrite text + Segoe Fluent Icons (built into Win 11)
-      Widgets.*              button, slider, toggle, album artwork
+      IslandVisuals.*        visual tree, glass material, the morph
+      Graphics.*             Direct2D/DirectWrite on the low-power GPU: text, icons, images
+      Effects.*              compositor effect brushes (colour boost, tiled grain)
+      Motion.*               motion tokens + spring/ease helpers
+      Widgets.*              control kit: label, icon button, toggle tile, segmented, slider
+      Glyphs.h               Segoe Fluent Icons characters
+    views/                   what each state shows (one layer each)
+      IdleView.*  PeekView.*  ControlKitDemo.*
     services/                ← anything slow runs on background threads
       FullscreenWatcher.*    game / fullscreen detection (event-driven)
       WindowClassifier.*     pure rule: normal / maximized / fullscreen (unit-tested)
@@ -199,6 +205,7 @@ windowsUI/
   tests/
     UnitTests.cpp            pure-logic tests, run by ctest
     fullscreen_test.ps1      game-safety test with real windows
+    visual_check.ps1         hands-free screenshots + morph timing
 ```
 
 **Threading rule:** the UI thread owns the window and the compositor, and it never waits on anything slow. Services do their work in the background and post results back through the `DispatcherQueue`.
@@ -248,18 +255,21 @@ This comes before any visual polish, so you can leave it running while gaming fr
   - ✅ 32 unit checks of the fullscreen rule and settings parsing pass.
   - ⬜ (you) The real-game rows of the matrix in §10: Valorant, Marvel Rivals, YouTube fullscreen, VLC, plus PresentMon showing *Independent Flip* with Island running.
 
-### Phase 3: Motion & glass (the feel)
-- Visual tree, rounded-rectangle clip geometry, and the spring morph Idle ↔ Peek ↔ Expanded.
-- Hover intent delay, leave delay and hysteresis (the area you have to leave is larger than the area you enter).
-- Slim-line mode over maximized windows, with a smooth morph between the line and the pill.
-- **Control kit:** button, toggle, radio/segmented and slider, with every hover and press animation from §5. We build and polish these on a demo panel first, so Phases 4–6 only reuse finished controls.
-- Glass material: backdrop blur, a saturation boost, a dark tint, fine noise and a rim highlight. **Same look on battery and plugged in.** A solid fallback is only for when Windows itself blocks blur (D1, D6).
-- Text with DirectWrite, icons from Segoe Fluent Icons.
-- Spring values hot-reload from `settings.json`.
+### Phase 3: Motion & glass (the feel) ✅ built (2026-10-24)
+- ✅ Visual tree, rounded-rectangle clip, and one spring morph for width, height, top gap and corner radius (Idle ↔ Peek ↔ Expanded). The pill is centered *relative* to the window, so growing the window at the start of a morph never moves it.
+- ✅ The window is resized only at the start of a morph (to the target plus ~5 % room for overshoot) and once the spring has settled (to fit exactly). Never per frame.
+- ✅ Hover intent (150 ms), leave delay (300 ms Peek, 500 ms control center) and hysteresis (the Peek window is bigger than the idle pill). Hover is ignored while a window is being dragged, and after a drag that ends on the island until the mouse leaves.
+- ✅ Slim line over maximized windows (150×4 DIP touching the top edge), morphing to and from the pill.
+- ✅ **Control kit** (`render/Widgets.*`): icon button (hover circle, press shrink with overshoot, play ↔ pause morph), toggle tile with a switch (knob spring, colour crossfade, knob stretch while held, "working" pulse), segmented choice (sliding selection), slider (1:1 drag, glide on click/wheel, thicker track and bigger thumb on hover, ignores outside changes while dragging), labels. Shown on the **control kit demo** panel (tray → "Control kit demo"); until Phase 4 a click on the island opens it too.
+- ✅ Glass: host backdrop blur → colour-matrix saturation boost (1.6) → dark tint (0.55) → tiled grain (3.5 %) → gradient rim hairline. Solid dark fallback when Windows has transparency effects off (follows the setting live).
+- ✅ Text with DirectWrite (Segoe UI Variable), icons from Segoe Fluent Icons, drawn on the **Intel** GPU (low-power adapter; confirmed in the log).
+- ✅ Every size, spring, fade and the glass come from `settings.json` and reload live. "On" colour: your accent, or blue when the accent is grey (yours is #757575, so it's blue); `glass.accent` overrides it.
 - **Done when:**
-  - Morphs and every control animation feel smooth on both 144 and 165 Hz.
-  - Interrupting an animation never snaps.
-  - Idle CPU is 0 % and RAM < 40 MB.
+  - ✅ Measured at 144 Hz (`visual_check.ps1`): every morph reaches its target within ~200–225 ms with a 2–4 px (~2 %) overshoot. ⬜ (you) Does it *feel* right on both screens (144 and 165 Hz)? Tune `motion` in settings.json.
+  - ✅ Interrupting never snaps: a morph reversed after 120 ms turns around from its current width. ⚠ It restarts from rest, though, instead of carrying its speed (the compositor's springs don't keep velocity). See "Later ideas".
+  - ✅ Idle CPU 0.0 ms over 20 s; **RAM 25 MB** (Task Manager "Memory"); handle count steady.
+  - ✅ 93 unit checks pass, incl. the state machine (found and fixed a stale-hover-timer bug) and the pointer routing / slider rules.
+  - ⬜ (you) Hover, click, drag every control in the demo; check the slim line over a maximized browser.
 
 ### Phase 4: Now playing
 - Pick the right media session: one that is playing beats one that is merely recent.
@@ -295,6 +305,7 @@ This comes before any visual polish, so you can leave it running while gaming fr
 - **Done when:** it runs for a week without you thinking about it.
 
 ### Later ideas (not committed)
+- Carry the current speed into a reversed morph (compute the spring's velocity ourselves and pass it as `InitialVelocity`). Positions are already continuous.
 - Replace Windows' own volume/brightness popup with the island. Hiding the built-in one is hacky and fragile.
 - Notifications, timer/stopwatch, charging animation.
 - A **"Liquid Glass" refraction** experiment. True refraction needs screen capture plus a custom shader, which costs GPU, so we'd only do it if it fits the budget.
@@ -460,6 +471,10 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-24 | `settings.json` is read from next to `Island.exe`, else from the repo's `config\` folder (builds made from the repo). `//` comments allowed; edits apply live; a broken edit keeps the previous settings |
 | 2026-10-24 | A small event log at `%LOCALAPPDATA%\Island\island.log`, rewritten at each start and capped at 2 MB |
 | 2026-10-24 | Code is split into `IslandCore` (a static library) + `Island.exe`, so `IslandTests` can test the same code; tests run with `ctest` |
+| 2026-10-24 | The island morph is one spring (damping 0.78, period 65 ms ≈ 200–225 ms to settle visibly); the window grows at the start of a morph and shrinks to fit once the spring has finished |
+| 2026-10-24 | "On" colour = the Windows accent, unless it's grey (then blue `#409CFF`); overridable with `glass.accent` |
+| 2026-10-24 | `--pose <state>` and tray → "Keep open (for tuning)" pin the island in one state. Visual tests use poses, so they never move your mouse or take focus |
+| 2026-10-24 | The control kit demo panel stays available from the tray after Phase 4/5 replace it as the click target |
 
 ## 12. Update log
 
@@ -467,6 +482,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 07:47 | **Phase 3 built.** New: `StateMachine.*`, `render/Graphics.*`, `render/Effects.*`, `render/Motion.*`, `render/Widgets.*`, `render/Glyphs.h`, `views/*` (idle, Peek placeholder, control kit demo), `tests/visual_check.ps1`; `IslandWindow` and `IslandVisuals` rewritten; settings gained `layout`, `glass` and `motion`; tray gained "Control kit demo" and "Keep open (for tuning)"; `--pose`. **Checked:** Release and Debug build with no warnings; 93 unit checks pass; `fullscreen_test.ps1` 8/8 again (slim line 5 px tall); hands-free visual check: screenshots of idle, Peek, control center, demo; morphs ~200–225 ms, 2–4 px overshoot, a reversal never jumps; **25 MB RAM, 0.0 ms idle CPU**. Found and fixed: the compositor refuses the colour-matrix effect unless all its properties are given; `RoundRect`/`DrawText` names clash with old Windows functions; a queued hover timer could open Peek after a window drag; your grey accent made "on" invisible. ⚠ A mouse-driven test run once found its test window behind your Chrome and clicked ~10 times near the middle of the primary screen before I added the "only click our own windows" guard. Those clicks may have landed in your Chrome window, so please check it. Tests that click now refuse to click anything but their own windows, and the visual test no longer clicks at all. **Not yet checked:** the feel by hand, and "transparency effects off" (it would change your desktop). |
 | 2026-10-24 07:03 | **Phase 2 built.** New: `services/FullscreenWatcher.*` (foreground + under-the-island window, scoped move/resize hooks, taskbar `ABN_FULLSCREENAPP`, `SHQueryUserNotificationState`, blocklist), `services/WindowClassifier.*`, `platform/Settings.*` (settings.json, live reload), `platform/Log.*`, `App.*`, `config/settings.json`, `tests/UnitTests.cpp`, `tests/fullscreen_test.ps1`. `IslandWindow` now hides instantly and shows after the delay; the tray menu opens settings and the log. **Checked:** Release and Debug build with no warnings; 32 unit checks pass; all 8 checks of `fullscreen_test.ps1` pass (hide 0–12 ms, show after 507 ms); blocklist hides at once; a broken settings edit keeps the old settings; **idle CPU 0.0 ms over 20 s, 2.0 MB RAM, handle count steady**. Found and fixed: the log file was locked while Island ran. Experiment: cursor-move events are reported by a system thread, not the thread that moved the pointer, so the thread-scoped hooks stay quiet during games. **Not yet checked:** real games and PresentMon (you). |
 | 2026-10-23 20:29 | **Phase 1 built.** New files: `IslandWindow.*` (window flags, top-center placement on the primary monitor, DPI, display-change handling, no-activate), `render/IslandVisuals.*` (compositor glass pill: blur-behind brush + tint + pill clip), `platform/Tray.*` (tray icon, Quit menu, Explorer-restart handling), `AppMessages.h`, `app.manifest` (Per-Monitor V2). `main.cpp` now handles single instance, replace-on-launch and `--quit`. The Phase 0 demo window was removed; it's in commit `f37f252`. **Checked (Release):** builds with no warnings; 250×51 px at the exact top-center of the Legion (125 %); always-on-top, no taskbar entry and never-takes-focus flags all set; launching doesn't steal focus; **1.9 MB RAM**; blur verified with a screenshot over a striped test pattern; a second launch replaces the first; `--quit` exits cleanly with code 0. **Not yet checked:** Debug build linking (blocked while your Phase 0 debug session was running), and the unplug/Alt+Tab/click checks for you. |
 | 2026-10-23 20:12 | **Phase 0 done** (except your debugger walkthrough). **Project setup:** Git repo (branch `main`), `.gitignore`, `CMakeLists.txt`, `CMakePresets.json` (MSVC only), `.vscode/` (F5 = build + debug) and `CLAUDE.md`. **First program** (`src/main.cpp`): a plain Win32 window that uses C++/WinRT to read the Windows version and open Settings → Display on click. **Checked:** builds with MSVC 19.50 and no warnings. The Release exe is 370 KB, runs at 13 MB RAM (Task Manager "Memory") and closes cleanly with exit code 0. |

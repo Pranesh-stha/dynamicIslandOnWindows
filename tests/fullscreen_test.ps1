@@ -98,11 +98,18 @@ public static class TestWin
         return CreateWindowEx(WS_EX_TOPMOST, "IslandTestWindow", "Island test window", style, r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top, IntPtr.Zero, IntPtr.Zero, GetModuleHandle(null), IntPtr.Zero);
     }
 
+    [DllImport("user32")] static extern IntPtr WindowFromPoint(POINT p);
+
     public static void ClickToFront(IntPtr window)
     {
         RECT r; GetWindowRect(window, out r);
         SetCursorPos((r.Left + r.Right) / 2, (r.Top + r.Bottom) / 2);
         Pump(30);
+        // Click only if the pointer is really over the test window, so a
+        // window that failed to appear can never turn into a click on your apps.
+        POINT p; GetCursorPos(out p);
+        if (WindowFromPoint(p) != window)
+            throw new InvalidOperationException("Not clicking: the test window isn't under the pointer.");
         var inputs = new INPUT[2];
         inputs[0].type = 0; inputs[0].mi.flags = 0x2;  // left down
         inputs[1].type = 0; inputs[1].mi.flags = 0x4;  // left up
@@ -188,9 +195,10 @@ try {
     $normal = [TestWin]::Create($small, $false)
     [TestWin]::ClickToFront($normal)
     [TestWin]::Maximize($normal)
-    [TestWin]::Pump(400)
+    [TestWin]::Pump(1500)  # the window shrinks to the line once the morph settles
     $visible = [TestWin]::WaitForIsland($true, 100) -ge 0
-    Check "stays for a maximized window" $visible ""
+    $height = [TestWin]::IslandHeight()
+    Check "stays for a maximized window, as the slim line" ($visible -and $height -le 12) "island window is $height px tall"
 
     # 4. The same window goes fullscreen like Chrome on F11 (no focus change).
     [TestWin]::GoFullscreen($normal, $primary)

@@ -10,6 +10,35 @@
 
 #include <winrt/Windows.System.h>
 
+#include "render/Motion.h"
+
+// Sizes in DIPs (device-independent pixels: 1 DIP = 1 pixel at 100 % scaling,
+// 1.25 pixels at 125 %, and so on).
+struct LayoutSettings
+{
+    float idleWidth = 200.0f;   // the resting pill
+    float idleHeight = 34.0f;
+    float topGap = 6.0f;        // space between the top of the screen and the island
+    float slimWidth = 150.0f;   // the line over maximized windows
+    float slimHeight = 4.0f;
+    float peekWidth = 340.0f;   // hover
+    float peekHeight = 56.0f;
+    float panelWidth = 400.0f;  // click: the control center (its height follows its content)
+    float panelRadius = 28.0f;
+};
+
+struct GlassSettings
+{
+    float tintOpacity = 0.55f;    // dark tint over the blur: 0 = clear, 1 = solid
+    float saturation = 1.6f;      // colour boost of what's behind (1 = unchanged)
+    float brightness = 1.0f;      // brightness of what's behind (1 = unchanged)
+    float noiseOpacity = 0.035f;  // faint grain that hides banding in the blur
+    float rimOpacity = 1.0f;      // the thin light edge along the outline
+    // Colour of "on" toggles and other highlights: "auto" (Windows' accent
+    // colour, or blue if that is grey) or "#RRGGBB".
+    std::wstring accent = L"auto";
+};
+
 struct GameSettings
 {
     // Exe names (lower case) that hide the island whenever they're the app in
@@ -25,6 +54,9 @@ struct GameSettings
 struct Settings
 {
     GameSettings games;
+    LayoutSettings layout;
+    GlassSettings glass;
+    MotionSettings motion;
 };
 
 // Reads JSON text into `out`. Keys that are missing keep their defaults, and

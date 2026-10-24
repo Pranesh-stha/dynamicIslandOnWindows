@@ -105,7 +105,8 @@ void Tray::ShowMenu(POINT anchor)
         else
         {
             // Menu command ids start at 1, because 0 means "nothing chosen".
-            AppendMenuW(menu, MF_STRING | (item.onClick ? 0 : MF_GRAYED), i + 1, item.text.c_str());
+            AppendMenuW(menu, MF_STRING | (item.onClick ? 0 : MF_GRAYED) | (item.checked ? MF_CHECKED : 0),
+                i + 1, item.text.c_str());
         }
     }
 
