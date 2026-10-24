@@ -8,7 +8,7 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 - **Quit / reopen:** tray icon (^ next to the clock) → Quit Island; reopen from the Start menu (search "Island"). Tray → "Start with Windows" (off until you tick it). After changing code: `pwsh -File tools\install.ps1 -Build` updates the installed copy.
 - Hands-on checks are left for you in the Phase 1–7 lists (games + PresentMon, how the glass and motion feel, sleep/wake).
 - ⚠ Two crashes were found and fixed on 2026-10-24 (§12): an Island crash on an empty media object, and **DWM (the Windows compositor) crashing** when a rebuilt panel released objects with springs still running. None since.
-- **Last updated:** 2026-10-24 17:29 NPT (UTC+05:45)
+- **Last updated:** 2026-10-24 17:56 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
@@ -408,13 +408,18 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
   - ✅ Installed copy running from `%LOCALAPPDATA%\Programs\Island`, Start menu entry present, exe carries the icon; **0.0 ms CPU over 60 s idle, 33.7 MB**; no crashes in the event log.
   - ⬜ (you) Sleep/wake and lock/unlock once, then open the island: everything should be current. Run the 48 h watch (`pwsh -File tests\soak_test.ps1 -Watch -Hours 48`) and look at the CSV. Then: a week without thinking about it.
 
-### Later ideas (not committed)
-- **Motion polish candidates** (discussed 2026-10-24, waiting for your pick): content that slides with the morph, staggered entrances, a hover highlight that glides between list rows, press feedback from the click point, a slider that grows while dragging, value bubbles on sliders, a lit edge that follows the mouse, toggle colour bloom, rolling numbers for percentages, a soft glow while something plays. See the chat for details.
+### Later ideas (updated 2026-10-24 with your answers)
+**Wanted (you):**
+- **Timer and stopwatch** in the island (counting in the pill while it runs).
+- **Charging animation** when the charger is plugged in or unplugged.
 
-- Carry the current speed into a reversed morph (compute the spring's velocity ourselves and pass it as `InitialVelocity`). Positions are already continuous.
-- Replace Windows' own volume/brightness popup with the island. Hiding the built-in one is hacky and fragile.
-- Notifications, timer/stopwatch, charging animation.
-- A **"Liquid Glass" refraction** experiment. True refraction needs screen capture plus a custom shader, which costs GPU, so we'd only do it if it fits the budget.
+**Motion polish** (small animation improvements): done in Phase 6b: content sliding with the morph, staggered entrances, the gliding list highlight, sliders growing while held, value bubbles, toggle colour bloom. Still open, for you to pick: press feedback that spreads from where you clicked; an edge light that follows the mouse; rolling digits for numbers like battery % and volume; a soft glow around the pill while music plays (only while the island shows); carrying a morph's speed when it reverses (smoother change of mind).
+
+**Liquid Glass:** mostly done (clear glass with the lens ring, Phase 6b). A full version, with every pixel bent by a real lens shape, would need Island to draw the glass itself every frame on the GPU (Windows' compositor doesn't take custom shaders), only while the island shows. Cost: see §12 (measured 2026-10-24).
+
+**Dropped (you):**
+- Notifications in the island.
+- Replacing Windows' own volume/brightness popup: you want to keep it.
 
 ## 8. Game safety: how we stay out of games' way
 
@@ -624,6 +629,7 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-24 | Installed per user in `%LOCALAPPDATA%\Programs\Island` with a Start menu entry (no admin); "Start with Windows" is a Startup-folder shortcut the user turns on from the tray (off by default) |
 | 2026-10-24 | No automatic restart after a crash: the previous run's log is kept and the crash noted; reopen from the Start menu |
 | 2026-10-24 | No dark-mode tray menu (only possible through undocumented Windows calls) |
+| 2026-10-24 | Later ideas, your answers: **yes** to timer/stopwatch and a charging animation; **no** to notifications; **keep** Windows' own volume/brightness popup |
 
 ## 12. Update log
 
@@ -631,6 +637,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 17:56 | **Later ideas sorted with you** (§7 "Later ideas", §11): yes to timer/stopwatch and a charging animation; no to notifications; Windows' own volume/brightness popup stays. Motion polish list split into done (Phase 6b) and still open. You confirmed the six hands-on checks (sleep button, lock/unlock, games, Wi-Fi/Bluetooth, feel). A GPU measurement of the clear glass was attempted, but Brave was fullscreen, so the island was (correctly) hidden and nothing was measured; not repeated automatically, because it would cover the top of your screen with a moving test pattern while you use the PC. |
 | 2026-10-24 17:29 | **Sleep button** in the header (your request). New: `services/SystemSleep.*`. **Checked:** `powercfg /a` (S3 available, no Modern Standby, hibernate off); Release + Debug build clean, 205 checks; header screenshot with the four buttons; installed copy updated. **Not checked by me:** pressing it (it would have put your PC to sleep). |
 | 2026-10-24 17:22 | **Phase 7 built.** New: `tools/install.ps1`, `tools/uninstall.ps1`, `tools/make_icon.ps1`, `src/Island.rc` + `Island.ico`, `platform/Startup.*`; tray gained "Start with Windows"; the log keeps the previous run; re-checks after sleep/unlock; capture restarts after a GPU reset. **Checked:** see Phase 7; Island is installed and running from `%LOCALAPPDATA%\Programs\Island`, and "Island" is in your Start menu. "Start with Windows" left **off** for you to decide. |
 | 2026-10-24 17:15 | **Phase 6b: clear glass, Keep awake, motion polish** (your request). New: `render/GlassCapture.*` (screen strip capture), `services/KeepAwake.*`, `Spotlight` widget, `tests/soak_test.ps1`; `IslandVisuals` gained the clear layers (view, lens with a ring mask drawn off-screen, sheen); `Effects::CreateClearGlassBrush`; settings `glass.style` / `blur` / `refraction`; `Motion::SpringTo` delays; `View::OnAppear`. **Checked:** see Phase 6b. **Found and fixed while testing:** unit tests crashed once the slider got a text label (labels now skip drawing without a renderer); the capture's yellow-border check first matched the test backdrop's own gold stripes. |
