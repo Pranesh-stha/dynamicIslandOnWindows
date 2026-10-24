@@ -16,13 +16,14 @@ float StatusSection::Build(const wuc::ContainerVisual& layer, ControlHost& contr
     m_date = std::make_unique<Label>(m_ui, 13.0f);
     m_date->Visual().Opacity(0.6f);
     m_batteryIcon = std::make_unique<Label>(m_ui, 17.0f, DWRITE_FONT_WEIGHT_NORMAL, true);
-    m_percent = std::make_unique<Label>(m_ui, 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+    m_percent = std::make_unique<RollingText>(m_ui, 14.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
     m_detail = std::make_unique<Label>(m_ui, 12.5f);
     m_detail->Visual().Opacity(0.6f);
-    for (Label* label : { m_time.get(), m_date.get(), m_batteryIcon.get(), m_percent.get(), m_detail.get() })
+    for (Label* label : { m_time.get(), m_date.get(), m_batteryIcon.get(), m_detail.get() })
     {
         layer.Children().InsertAtTop(label->Visual());
     }
+    layer.Children().InsertAtTop(m_percent->Visual());
 
     // Quick toggles. A muted microphone shows in red, like a call's mute button.
     m_mic = std::make_unique<ToggleChip>(m_ui, Glyph::Mic, L"Microphone");
@@ -148,7 +149,7 @@ void StatusSection::ArrangeBattery()
 {
     // Right-aligned: [icon] 84 %  Charging · 45 min to full
     m_batteryIcon->SetText(std::wstring(1, BatteryGlyph(m_power)));
-    m_percent->SetText(m_power.hasBattery ? std::format(L"{} %", m_power.percent) : L"");
+    m_percent->SetText(m_power.hasBattery ? std::format(L"{} %", m_power.percent) : L"", m_running);
     m_detail->SetText(PowerDescription(m_power));
     const float middle = m_y + m_time->Height() / 2.0f;
     float right = m_x + m_width;

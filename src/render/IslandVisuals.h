@@ -3,6 +3,8 @@
 #include <windows.h>
 #include <Unknwn.h>
 
+#include <array>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 
@@ -39,8 +41,10 @@ struct IslandShape
 //        ├─ tint          dark layer for contrast
 //        ├─ grain         faint noise, hides banding in the blur
 //        ├─ sheen         a soft gloss at the top, like light on glass
+//        ├─ glow          a soft ring of the album's colour while music plays
 //        ├─ content       what the views show (Idle / Peek / Expanded layers)
-//        └─ rim           thin light edge along the outline
+//        ├─ rim           thin light edge along the outline
+//        └─ rim light     a brighter spot on the rim that follows the mouse
 //
 // The pill is centered relative to the window, so resizing the window (which
 // happens at the start of a morph) never moves it, not even for one frame.
@@ -70,11 +74,22 @@ public:
     // Shown once the copy has content; the frosted glass shows until then.
     void ShowClear(bool shown, bool animate);
 
+    // The mouse over the island, in the pill's pixels: the rim lights up near it.
+    void SetPointer(bool inside, float x, float y);
+
+    // A soft ring of `color` inside the edge (the album's colour while music plays).
+    void SetGlow(winrt::Windows::UI::Color color, bool on, bool animate);
+
 private:
     void FollowPill(const winrt::Windows::UI::Composition::CompositionRoundedRectangleGeometry& geometry);
     void CreateGrain(Graphics& graphics);
     void BuildClear();
+    void BuildGlow();
     winrt::Windows::UI::Composition::ExpressionAnimation Follow(const wchar_t* formula) const;
+    // A ring along the inside of the outline that fades out inwards, `width`
+    // pixels wide, drawn off-screen and kept alive in `visual` and `surface`.
+    winrt::Windows::UI::Composition::CompositionSurfaceBrush RingMask(float width,
+        winrt::Windows::UI::Composition::ShapeVisual& visual, winrt::Windows::UI::Composition::CompositionVisualSurface& surface);
 
     winrt::Windows::UI::Composition::Compositor m_compositor{ nullptr };
     winrt::Windows::UI::Composition::Desktop::DesktopWindowTarget m_target{ nullptr };
@@ -90,6 +105,23 @@ private:
     winrt::Windows::UI::Composition::SpriteVisual m_sheen{ nullptr };
     winrt::Windows::UI::Composition::ShapeVisual m_ring{ nullptr };  // the lens's mask, drawn off-screen
     winrt::Windows::UI::Composition::CompositionVisualSurface m_ringSurface{ nullptr };
+    winrt::Windows::UI::Composition::SpriteVisual m_glow{ nullptr };
+    winrt::Windows::UI::Composition::CompositionColorBrush m_glowColor{ nullptr };
+    winrt::Windows::UI::Composition::ShapeVisual m_glowRing{ nullptr };
+    winrt::Windows::UI::Composition::CompositionVisualSurface m_glowSurface{ nullptr };
+    winrt::Windows::UI::Composition::ShapeVisual m_rimLight{ nullptr };
+    winrt::Windows::UI::Composition::CompositionRadialGradientBrush m_rimLightBrush{ nullptr };
+    bool m_pointerInside = false;
+
+    // Where each part of the outline's spring is heading, so that a new
+    // morph can start with the old one's speed: width, height, top, radius.
+    struct Track
+    {
+        float from = 0.0f, velocity = 0.0f, to = 0.0f;
+    };
+    std::array<Track, 4> m_tracks{};
+    Spring m_trackSpring{};
+    std::chrono::steady_clock::time_point m_trackStart{};
     winrt::Windows::UI::Composition::ICompositionSurface m_clearSource{ nullptr };
     float m_regionWidth = 0.0f;
     bool m_clearStyle = false;

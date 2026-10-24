@@ -80,6 +80,9 @@ void IslandVisuals::Initialize(HWND hwnd, const wuc::Compositor& compositor, Gra
     fill(m_grain);
     m_sheen = m_compositor.CreateSpriteVisual();
     fill(m_sheen);
+    m_glow = m_compositor.CreateSpriteVisual();
+    m_glow.Opacity(0.0f);
+    fill(m_glow);
     m_content = m_compositor.CreateContainerVisual();
     fill(m_content);
 
@@ -91,6 +94,21 @@ void IslandVisuals::Initialize(HWND hwnd, const wuc::Compositor& compositor, Gra
     m_rim = m_compositor.CreateShapeVisual();
     m_rim.Shapes().Append(m_rimShape);
     fill(m_rim);
+
+    // The rim light: the same outline, stroked with a soft spot of light
+    // whose centre the mouse moves.
+    auto lightShape = m_compositor.CreateRoundedRectangleGeometry();
+    FollowPill(lightShape);
+    m_rimLightBrush = m_compositor.CreateRadialGradientBrush();
+    m_rimLightBrush.MappingMode(wuc::CompositionMappingMode::Absolute);
+    m_rimLightBrush.ColorStops().Append(m_compositor.CreateColorGradientStop(0.0f, White(0.85f)));
+    m_rimLightBrush.ColorStops().Append(m_compositor.CreateColorGradientStop(1.0f, White(0.0f)));
+    auto light = m_compositor.CreateSpriteShape(lightShape);
+    light.StrokeBrush(m_rimLightBrush);
+    m_rimLight = m_compositor.CreateShapeVisual();
+    m_rimLight.Shapes().Append(light);
+    m_rimLight.Opacity(0.0f);
+    fill(m_rimLight);
 
     CreateGrain(graphics);
 }
@@ -165,6 +183,8 @@ void IslandVisuals::ApplyGlass(const GlassSettings& glass, bool effectsEnabled, 
     rim.ColorStops().Append(m_compositor.CreateColorGradientStop(1.0f, White(rimBottom * glass.rimOpacity)));
     m_rimShape.StrokeBrush(rim);
     m_rimShape.StrokeThickness(2.0f * std::max(1.0f, std::round(scale)));
+    m_rimLight.Shapes().GetAt(0).as<wuc::CompositionSpriteShape>().StrokeThickness(3.0f * std::max(1.0f, std::round(scale)));
+    m_rimLightBrush.EllipseRadius({ 130.0f * scale, 130.0f * scale });
 
     // The sheen: a soft gloss over the top part, fading out by the middle.
     auto sheen = m_compositor.CreateLinearGradientBrush();
@@ -182,6 +202,7 @@ void IslandVisuals::ApplyGlass(const GlassSettings& glass, bool effectsEnabled, 
     m_brightness = glass.brightness;
     m_scale = scale;
     BuildClear();
+    BuildGlow();
 }
 
 wuc::ExpressionAnimation IslandVisuals::Follow(const wchar_t* formula) const
@@ -244,13 +265,23 @@ void IslandVisuals::BuildClear()
     bent.StartAnimation(L"Scale", shrink);
     const auto lens = Effects::CreateClearGlassBrush(m_compositor, bent, m_blur * 0.7f, m_saturation * 1.15f, m_brightness * 1.12f);
 
-    // The ring: strokes along the outline, each a little further in and
-    // fainter, drawn off-screen into a surface that follows the pill's size.
-    const int steps = 8;
     const float width = std::max(4.0f, m_scale * 11.0f * std::min(m_refraction, 1.5f));
+    auto ring = RingMask(width, m_ring, m_ringSurface);
+
+    auto masked = m_compositor.CreateMaskBrush();
+    masked.Source(lens);
+    masked.Mask(ring);
+    m_lens.Brush(masked);
+}
+
+wuc::CompositionSurfaceBrush IslandVisuals::RingMask(float width, wuc::ShapeVisual& visual, wuc::CompositionVisualSurface& surface)
+{
+    // Strokes along the outline, each a little further in and fainter, drawn
+    // off-screen into a surface that follows the pill's size.
+    const int steps = 8;
     const float step = width / static_cast<float>(steps);
-    m_ring = m_compositor.CreateShapeVisual();
-    m_ring.StartAnimation(L"Size", Follow(L"pill.Size"));
+    visual = m_compositor.CreateShapeVisual();
+    visual.StartAnimation(L"Size", Follow(L"pill.Size"));
     for (int i = 0; i < steps; ++i)
     {
         const float inset = step * (static_cast<float>(i) + 0.5f);
@@ -269,20 +300,61 @@ void IslandVisuals::BuildClear()
         const float t = static_cast<float>(i) / static_cast<float>(steps - 1);
         shape.StrokeBrush(m_compositor.CreateColorBrush(White((1.0f - t) * (1.0f - t))));
         shape.StrokeThickness(step + 0.5f);  // a little overlap, so no gaps between the strokes
-        m_ring.Shapes().Append(shape);
+        visual.Shapes().Append(shape);
     }
-    m_ringSurface = m_compositor.CreateVisualSurface();
-    m_ringSurface.SourceVisual(m_ring);
-    m_ringSurface.StartAnimation(L"SourceSize", Follow(L"pill.Size"));
-    auto ring = m_compositor.CreateSurfaceBrush(m_ringSurface);
-    ring.Stretch(wuc::CompositionStretch::None);
-    ring.HorizontalAlignmentRatio(0.0f);
-    ring.VerticalAlignmentRatio(0.0f);
+    surface = m_compositor.CreateVisualSurface();
+    surface.SourceVisual(visual);
+    surface.StartAnimation(L"SourceSize", Follow(L"pill.Size"));
+    auto brush = m_compositor.CreateSurfaceBrush(surface);
+    brush.Stretch(wuc::CompositionStretch::None);
+    brush.HorizontalAlignmentRatio(0.0f);
+    brush.VerticalAlignmentRatio(0.0f);
+    return brush;
+}
 
+void IslandVisuals::BuildGlow()
+{
+    // A wide, soft ring of one colour: nothing moves in it, so it costs
+    // nothing between changes.
+    if (!m_glowColor)
+    {
+        m_glowColor = m_compositor.CreateColorBrush({ 255, 64, 156, 255 });
+    }
     auto masked = m_compositor.CreateMaskBrush();
-    masked.Source(lens);
-    masked.Mask(ring);
-    m_lens.Brush(masked);
+    masked.Source(m_glowColor);
+    masked.Mask(RingMask(m_scale * 16.0f, m_glowRing, m_glowSurface));
+    m_glow.Brush(masked);
+}
+
+void IslandVisuals::SetGlow(winrt::Windows::UI::Color color, bool on, bool animate)
+{
+    if (m_glowColor)
+    {
+        m_glowColor.Color(color);
+    }
+    const float opacity = on ? 0.35f : 0.0f;
+    if (animate)
+    {
+        Motion::EaseTo(m_glow, L"Opacity", opacity, on ? 500 : 300);
+    }
+    else
+    {
+        m_glow.StopAnimation(L"Opacity");
+        m_glow.Opacity(opacity);
+    }
+}
+
+void IslandVisuals::SetPointer(bool inside, float x, float y)
+{
+    if (inside)
+    {
+        m_rimLightBrush.EllipseCenter({ x, y });
+    }
+    if (inside != m_pointerInside)
+    {
+        m_pointerInside = inside;
+        Motion::EaseTo(m_rimLight, L"Opacity", inside ? 1.0f : 0.0f, inside ? 160 : 260);
+    }
 }
 
 void IslandVisuals::ShowClear(bool shown, bool animate)
@@ -319,8 +391,15 @@ void IslandVisuals::SetPresent(bool present, bool animate)
 void IslandVisuals::MorphTo(const IslandShape& shape, const Spring& spring, bool animate, std::function<void()> onSettled)
 {
     const uint64_t generation = ++m_generation;
+    const std::array<float, 4> targets{ shape.width, shape.height, shape.top, shape.radius };
+    const auto now = std::chrono::steady_clock::now();
     if (!animate)
     {
+        for (size_t i = 0; i < targets.size(); ++i)
+        {
+            m_tracks[i] = { targets[i], 0.0f, targets[i] };
+        }
+        m_trackStart = now;
         m_pill.StopAnimation(L"Size");
         m_pill.StopAnimation(L"Offset");
         m_properties.StopAnimation(L"Radius");
@@ -335,10 +414,23 @@ void IslandVisuals::MorphTo(const IslandShape& shape, const Spring& spring, bool
     }
 
     // A "scoped batch" tells us when every animation started inside it has finished.
+    // Where the outline is and how fast it moves right now (a change of mind
+    // halfway): the new spring sets off with that speed instead of from rest.
+    const float elapsed = std::chrono::duration<float>(now - m_trackStart).count();
+    std::array<float, 4> velocity{};
+    for (size_t i = 0; i < targets.size(); ++i)
+    {
+        const auto point = Motion::SpringAt(m_trackSpring, m_tracks[i].from, m_tracks[i].velocity, m_tracks[i].to, elapsed);
+        velocity[i] = point.velocity;
+        m_tracks[i] = { point.value, point.velocity, targets[i] };
+    }
+    m_trackSpring = spring;
+    m_trackStart = now;
+
     m_batch = m_compositor.CreateScopedBatch(wuc::CompositionBatchTypes::Animation);
-    Motion::SpringTo(m_pill, L"Size", Motion::float2{ shape.width, shape.height }, spring);
-    Motion::SpringTo(m_pill, L"Offset", Motion::float3{ 0.0f, shape.top, 0.0f }, spring);
-    Motion::SpringTo(m_properties, L"Radius", shape.radius, spring);
+    Motion::SpringTo(m_pill, L"Size", Motion::float2{ shape.width, shape.height }, Motion::float2{ velocity[0], velocity[1] }, spring);
+    Motion::SpringTo(m_pill, L"Offset", Motion::float3{ 0.0f, shape.top, 0.0f }, Motion::float3{ 0.0f, velocity[2], 0.0f }, spring);
+    Motion::SpringTo(m_properties, L"Radius", shape.radius, velocity[3], spring);
     m_batch.End();
     m_batch.Completed([this, generation, onSettled](auto&&, auto&&)
     {

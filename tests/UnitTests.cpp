@@ -40,6 +40,7 @@
 #include "services/DisplayService.h"
 #include "services/NightLightService.h"
 #include "services/PowerService.h"
+#include "services/TimerService.h"
 #include "services/WifiService.h"
 #include "views/sections/ConnectionsSection.h"
 #include "views/sections/DisplaysSection.h"
@@ -408,6 +409,18 @@ namespace
     void TestControls(const Ui& ui)
     {
         {
+            // Rolling text: every digit gets the same width, so "1:11" and
+            // "8:88" are equally wide and the time doesn't jiggle as it counts.
+            RollingText a(ui, 15.0f), b(ui, 15.0f);
+            a.SetText(L"1:11", false);
+            b.SetText(L"8:88", false);
+            CHECK(a.Width() > 0.0f && a.Width() == b.Width());
+            a.SetText(L"1:12", true);  // same length: rolls in place
+            CHECK(a.Text() == L"1:12" && a.Width() == b.Width());
+            a.SetText(L"10:00", true);  // longer: laid out again
+            CHECK(a.Text() == L"10:00" && a.Width() > b.Width());
+        }
+        {
             // Hover, press, release inside = click. Feedback on press, action on release.
             FakeControl button(ui, false);
             button.SetBounds(10, 10, 40, 40);
@@ -685,6 +698,68 @@ namespace
         CHECK(DisplayCaption({ L"DISPLAY1#1", L"Legion 27Q-10", false, true, true, 80 }, displays) == L"Legion 27Q-10 · 144 Hz");
         CHECK(DisplayCaption({ L"other", L"Built-in display", true, false, true, 40 }, displays) == L"Built-in display");
         CHECK(DisplayCaption({ L"DISPLAY1#1", L"Legion 27Q-10", false, true, false, 0 }, displays) == L"Legion 27Q-10 · turn on DDC/CI in its menu");
+    }
+
+    void TestTimerAndSprings()
+    {
+        // A 5 minute countdown, started at t = 1000 ms.
+        TimerState timer;
+        timer.mode = TimerMode::Countdown;
+        timer.durationMs = 5 * 60'000;
+        timer.running = true;
+        timer.startedAt = 1000;
+        CHECK(TimerText(timer, 1000) == L"5:00");
+        CHECK(TimerText(timer, 1001) == L"5:00");          // 4:59.999 left still reads 5:00
+        CHECK(TimerText(timer, 2000) == L"4:59");
+        CHECK(TimerText(timer, 1000 + 299'500) == L"0:01");
+        CHECK(TimerRemainingMs(timer, 1000 + 400'000) == 0);  // never below zero
+        CHECK(TimerHoldsPill(timer));
+
+        // Paused after 90 s: the time stays put, and the pill may tuck away.
+        timer.bankedMs = TimerElapsedMs(timer, 91'000);
+        timer.running = false;
+        CHECK(timer.bankedMs == 90'000);
+        CHECK(TimerText(timer, 500'000) == L"3:30");
+        CHECK(!TimerHoldsPill(timer));
+        // Resumed at t = 600 s: counting on from where it was.
+        timer.running = true;
+        timer.startedAt = 600'000;
+        CHECK(TimerText(timer, 610'000) == L"3:20");
+        // Finished: "Time's up" holds the pill until dismissed.
+        timer.running = false;
+        timer.finished = true;
+        CHECK(TimerHoldsPill(timer));
+
+        // The stopwatch counts whole seconds, and shows hours past the hour.
+        TimerState watch;
+        watch.mode = TimerMode::Stopwatch;
+        watch.running = true;
+        watch.startedAt = 0;
+        CHECK(TimerText(watch, 999) == L"0:00");
+        CHECK(TimerText(watch, 1000) == L"0:01");
+        CHECK(TimerText(watch, 3'723'000) == L"1:02:03");
+        CHECK(!TimerHoldsPill(TimerState{}));
+
+        // Springs: start where they were told, with the speed they were given,
+        // settle at the target, and the speed matches how the value moves.
+        const Spring spring{ 0.78f, 65.0f };
+        auto start = Motion::SpringAt(spring, 100.0f, 500.0f, 300.0f, 0.0f);
+        CHECK(std::abs(start.value - 100.0f) < 0.01f && std::abs(start.velocity - 500.0f) < 0.5f);
+        auto later = Motion::SpringAt(spring, 100.0f, 500.0f, 300.0f, 2.0f);
+        CHECK(std::abs(later.value - 300.0f) < 0.1f && std::abs(later.velocity) < 1.0f);
+        const float t = 0.03f, dt = 0.0005f;
+        const float slope = (Motion::SpringAt(spring, 100.0f, 0.0f, 300.0f, t + dt).value -
+                             Motion::SpringAt(spring, 100.0f, 0.0f, 300.0f, t - dt).value) / (2.0f * dt);
+        CHECK(std::abs(slope - Motion::SpringAt(spring, 100.0f, 0.0f, 300.0f, t).velocity) < 2.0f);
+        // From rest it moves towards the target; a little bounce goes past it.
+        bool passed = false;
+        for (float time = 0.0f; time < 0.5f; time += 0.005f)
+        {
+            passed |= Motion::SpringAt(spring, 100.0f, 0.0f, 300.0f, time).value > 300.0f;
+        }
+        CHECK(passed);
+        const auto stiff = Motion::SpringAt(Spring{ 1.0f, 65.0f }, 0.0f, 0.0f, 50.0f, 1.0f);  // no bounce
+        CHECK(std::abs(stiff.value - 50.0f) < 0.1f);
     }
 
     void TestThrottle()
@@ -986,6 +1061,7 @@ int main(int argc, char** argv)
     TestThrottle();
     TestQuickControls();
     TestQuickToggles();
+    TestTimerAndSprings();
 
     // Controls need a real compositor (no window: nothing is shown).
     const auto queue = CreateDispatcherQueue();

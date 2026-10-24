@@ -155,6 +155,160 @@ void Label::Render()
     m_visual.Size({ m_size.Width, m_size.Height });
 }
 
+// --- RollingText -------------------------------------------------------------
+
+RollingText::RollingText(const Ui& ui, float sizeDip, DWRITE_FONT_WEIGHT weight) : m_ui(ui), m_sizeDip(sizeDip), m_weight(weight)
+{
+    m_root = ui.compositor.CreateContainerVisual();
+    m_height = std::ceil(ui.scale * sizeDip * 1.33f);
+    for (wchar_t digit = L'0'; digit <= L'9'; ++digit)
+    {
+        m_digitWidth = std::max(m_digitWidth, SlotWidth(digit));
+    }
+}
+
+float RollingText::SlotWidth(wchar_t ch) const
+{
+    if (ch >= L'0' && ch <= L'9' && m_digitWidth > 0.0f)
+    {
+        return m_digitWidth;
+    }
+    if (!m_ui.graphics)
+    {
+        return m_ui.Px(m_sizeDip * 0.6f);  // unit tests: nothing is drawn
+    }
+    TextStyle style;
+    style.sizePx = m_ui.scale * m_sizeDip;
+    style.weight = m_weight;
+    return std::max(1.0f, m_ui.graphics->MeasureText(std::wstring(1, ch), style).Width - 2.0f);
+}
+
+void RollingText::Place(Label& label, const Slot& slot, float y)
+{
+    label.SetPosition(std::round((slot.width - label.Width()) / 2.0f), y);
+}
+
+void RollingText::Rebuild()
+{
+    m_root.Children().RemoveAll();
+    m_slots.clear();
+    float x = 0.0f;
+    for (const wchar_t ch : m_text)
+    {
+        Slot slot;
+        slot.width = SlotWidth(ch);
+        slot.box = m_ui.compositor.CreateContainerVisual();
+        slot.box.Size({ slot.width, m_height });
+        slot.box.Offset({ x, 0.0f, 0.0f });
+        slot.box.Clip(m_ui.compositor.CreateInsetClip());  // the rolling stays inside its slot
+        for (auto& label : slot.labels)
+        {
+            label = std::make_unique<Label>(m_ui, m_sizeDip, m_weight);
+            slot.box.Children().InsertAtTop(label->Visual());
+        }
+        slot.labels[0]->SetText(std::wstring(1, ch));
+        Place(*slot.labels[0], slot, 0.0f);
+        slot.labels[1]->Visual().Opacity(0.0f);
+        m_root.Children().InsertAtTop(slot.box);
+        x += slot.width;
+        m_slots.push_back(std::move(slot));
+    }
+    m_width = x;
+    m_root.Size({ m_width, m_height });
+}
+
+void RollingText::SetText(std::wstring_view text, bool animate)
+{
+    if (text == m_text)
+    {
+        return;
+    }
+    if (text.size() != m_text.size())
+    {
+        m_text = text;  // e.g. 9:59 -> 10:00: laid out again, no roll
+        Rebuild();
+        return;
+    }
+    for (size_t i = 0; i < text.size(); ++i)
+    {
+        if (text[i] == m_text[i])
+        {
+            continue;
+        }
+        Slot& slot = m_slots[i];
+        Label& out = *slot.labels[slot.shown];
+        Label& in = *slot.labels[1 - slot.shown];
+        in.SetText(std::wstring(1, text[i]));
+        if (animate)
+        {
+            // The new character comes up from below as the old one leaves upwards.
+            Place(in, slot, m_height);
+            in.Visual().StopAnimation(L"Opacity");
+            in.Visual().Opacity(0.0f);
+            Motion::EaseTo(in.Visual(), L"Offset.Y", 0.0f, 280);
+            Motion::EaseTo(in.Visual(), L"Opacity", 1.0f, 180);
+            Motion::EaseTo(out.Visual(), L"Offset.Y", -m_height * 0.7f, 280);
+            Motion::EaseTo(out.Visual(), L"Opacity", 0.0f, 160);
+        }
+        else
+        {
+            in.Visual().StopAnimation(L"Offset.Y");
+            out.Visual().StopAnimation(L"Offset.Y");
+            Place(in, slot, 0.0f);
+            in.Visual().StopAnimation(L"Opacity");
+            in.Visual().Opacity(1.0f);
+            out.Visual().StopAnimation(L"Opacity");
+            out.Visual().Opacity(0.0f);
+        }
+        slot.shown = 1 - slot.shown;
+    }
+    m_text = text;
+}
+
+void RollingText::SetPosition(float x, float y)
+{
+    m_root.Offset({ std::round(x), std::round(y), 0.0f });
+}
+
+// --- Ripple ------------------------------------------------------------------
+
+Ripple::Ripple(const Ui& ui) : m_ui(ui)
+{
+    m_circle = ui.compositor.CreateEllipseGeometry();
+    m_circle.Radius({ 0.0f, 0.0f });
+    auto shape = ui.compositor.CreateSpriteShape(m_circle);
+    shape.FillBrush(ui.compositor.CreateColorBrush(White(0.16f)));
+    m_visual = ui.compositor.CreateShapeVisual();
+    m_visual.Shapes().Append(shape);
+    m_bounds = ui.compositor.CreateRoundedRectangleGeometry();
+    m_visual.Clip(ui.compositor.CreateGeometricClip(m_bounds));
+    m_visual.Opacity(0.0f);
+}
+
+void Ripple::Resize(float width, float height, float radius)
+{
+    m_width = width;
+    m_height = height;
+    m_visual.Size({ width, height });
+    m_bounds.Size({ width, height });
+    radius = std::min(radius, std::min(width, height) / 2.0f);
+    m_bounds.CornerRadius({ radius, radius });
+}
+
+void Ripple::Start(float x, float y)
+{
+    // Big enough to reach the far corner from where you pressed.
+    const float dx = std::max(x, m_width - x), dy = std::max(y, m_height - y);
+    const float full = std::sqrt(dx * dx + dy * dy);
+    m_circle.Center({ x, y });
+    m_circle.StopAnimation(L"Radius");
+    m_circle.Radius({ 0.0f, 0.0f });
+    Motion::EaseTo(m_circle, L"Radius", float2{ full, full }, 420);
+    m_visual.StopAnimation(L"Opacity");
+    m_visual.Opacity(1.0f);
+    Motion::EaseTo(m_visual, L"Opacity", 0.0f, 520, 160);
+}
+
 // --- Control -----------------------------------------------------------------
 
 Control::Control(const Ui& ui) : m_ui(ui)
@@ -535,6 +689,7 @@ void ToggleSwitch::PlaceKnob(bool animate)
 
 ToggleTile::ToggleTile(const Ui& ui, wchar_t glyph, std::wstring_view title)
     : Control(ui),
+      m_ripple(ui),
       m_icon(ui, 15.0f, DWRITE_FONT_WEIGHT_NORMAL, true),
       m_title(ui, 13.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD),
       m_subtitle(ui, 11.5f),
@@ -555,7 +710,7 @@ ToggleTile::ToggleTile(const Ui& ui, wchar_t glyph, std::wstring_view title)
     m_subtitle.Visual().Opacity(0.6f);
 
     for (const wuc::Visual& visual : { wuc::Visual(m_background.visual), wuc::Visual(m_selectedLayer.visual),
-                                       wuc::Visual(m_hoverLayer.visual), wuc::Visual(m_iconOff.visual),
+                                       wuc::Visual(m_hoverLayer.visual), wuc::Visual(m_ripple.Visual()), wuc::Visual(m_iconOff.visual),
                                        wuc::Visual(m_iconOn.visual), wuc::Visual(m_icon.Visual()),
                                        wuc::Visual(m_title.Visual()), wuc::Visual(m_subtitle.Visual()),
                                        wuc::Visual(m_switch.Visual()) })
@@ -570,6 +725,7 @@ void ToggleTile::Layout()
     m_background.Resize(m_width, m_height, radius);
     m_selectedLayer.Resize(m_width, m_height, radius);
     m_hoverLayer.Resize(m_width, m_height, radius);
+    m_ripple.Resize(m_width, m_height, radius);
 
     const float pad = m_ui.Px(12.0f);
     const float iconSize = m_iconOff.visual.Size().x;
@@ -656,8 +812,9 @@ void ToggleTile::OnHoverChanged(bool hovered)
     }
 }
 
-void ToggleTile::OnPointerDown(float x, float)
+void ToggleTile::OnPointerDown(float x, float y)
 {
+    m_ripple.Start(x, y);
     if (m_compact)
     {
         // The round icon and a little room around it is the on/off button.
@@ -696,6 +853,7 @@ void ToggleTile::OnClick()
 
 ToggleChip::ToggleChip(const Ui& ui, wchar_t glyph, std::wstring_view label)
     : Control(ui),
+      m_ripple(ui),
       m_icon(ui, 13.0f, DWRITE_FONT_WEIGHT_NORMAL, true),
       m_label(ui, 12.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD)
 {
@@ -707,10 +865,10 @@ ToggleChip::ToggleChip(const Ui& ui, wchar_t glyph, std::wstring_view label)
     m_onLayer.visual.Clip(ui.compositor.CreateGeometricClip(m_bloom));
     m_hoverLayer = RoundedRect(ui, 1.0f, 1.0f, 0.0f, White(0.08f));
     m_hoverLayer.visual.Opacity(0.0f);
-    m_icon.SetText(std::wstring(1, glyph));
+    m_icon.SetText(glyph ? std::wstring(1, glyph) : std::wstring());
     m_label.SetText(label);
     for (const wuc::Visual& visual : { wuc::Visual(m_background.visual), wuc::Visual(m_onLayer.visual), wuc::Visual(m_hoverLayer.visual),
-                                       wuc::Visual(m_icon.Visual()), wuc::Visual(m_label.Visual()) })
+                                       wuc::Visual(m_ripple.Visual()), wuc::Visual(m_icon.Visual()), wuc::Visual(m_label.Visual()) })
     {
         m_root.Children().InsertAtTop(visual);
     }
@@ -718,7 +876,22 @@ ToggleChip::ToggleChip(const Ui& ui, wchar_t glyph, std::wstring_view label)
 
 float ToggleChip::NaturalWidth() const
 {
+    // Icon and words; or just one of them, evenly padded.
+    if (m_label.Text().empty())
+    {
+        return std::round(m_icon.Width() + 2.0f * m_ui.Px(10.0f));
+    }
+    if (m_icon.Text().empty())
+    {
+        return std::round(m_label.Width() + 2.0f * m_ui.Px(12.0f));
+    }
     return std::round(m_ui.Px(12.0f) + m_icon.Width() + m_ui.Px(7.0f) + m_label.Width() + m_ui.Px(14.0f));
+}
+
+void ToggleChip::SetLabel(std::wstring_view label)
+{
+    m_label.SetText(label);
+    Layout();
 }
 
 void ToggleChip::Layout()
@@ -727,9 +900,12 @@ void ToggleChip::Layout()
     {
         rect->Resize(m_width, m_height, m_height / 2.0f);
     }
-    const float iconX = m_ui.Px(12.0f);
+    m_ripple.Resize(m_width, m_height, m_height / 2.0f);
+    // Centred when there's only one of the two.
+    const float iconX = m_label.Text().empty() ? std::round((m_width - m_icon.Width()) / 2.0f) : m_ui.Px(12.0f);
     m_icon.SetPosition(iconX, std::round((m_height - m_icon.Height()) / 2.0f));
-    m_label.SetPosition(iconX + m_icon.Width() + m_ui.Px(7.0f), std::round((m_height - m_label.Height()) / 2.0f));
+    const float labelX = m_icon.Text().empty() ? std::round((m_width - m_label.Width()) / 2.0f) : iconX + m_icon.Width() + m_ui.Px(7.0f);
+    m_label.SetPosition(labelX, std::round((m_height - m_label.Height()) / 2.0f));
     m_bloom.Center({ iconX + m_icon.Width() / 2.0f, m_height / 2.0f });
     if (m_on)
     {
@@ -770,7 +946,7 @@ void ToggleChip::SetOn(bool on, bool animate)
 
 void ToggleChip::SetGlyph(wchar_t glyph)
 {
-    m_icon.SetText(std::wstring(1, glyph));
+    m_icon.SetText(glyph ? std::wstring(1, glyph) : std::wstring());
 }
 
 void ToggleChip::SetOnColor(winrt::Windows::UI::Color color)
@@ -806,6 +982,11 @@ void ToggleChip::OnPressChanged(bool pressed)
     Motion::SpringTo(m_root, L"Scale", pressed ? float3{ 0.94f, 0.94f, 1.0f } : float3{ 1.0f, 1.0f, 1.0f }, m_ui.motion->press);
 }
 
+void ToggleChip::OnPointerDown(float x, float y)
+{
+    m_ripple.Start(x, y);
+}
+
 void ToggleChip::OnClick()
 {
     if (onClick)
@@ -818,6 +999,7 @@ void ToggleChip::OnClick()
 
 ListRow::ListRow(const Ui& ui)
     : Control(ui),
+      m_ripple(ui),
       m_icon(ui, 14.0f, DWRITE_FONT_WEIGHT_NORMAL, true),
       m_title(ui, 13.0f),
       m_detail(ui, 11.0f),
@@ -831,7 +1013,7 @@ ListRow::ListRow(const Ui& ui)
     m_iconOn.visual.Opacity(0.0f);
     m_detail.Visual().Opacity(0.55f);
     m_trailing.Visual().Opacity(0.5f);
-    for (const wuc::Visual& visual : { wuc::Visual(m_highlight.visual), wuc::Visual(m_iconOff.visual),
+    for (const wuc::Visual& visual : { wuc::Visual(m_highlight.visual), wuc::Visual(m_ripple.Visual()), wuc::Visual(m_iconOff.visual),
                                        wuc::Visual(m_iconOn.visual), wuc::Visual(m_icon.Visual()),
                                        wuc::Visual(m_title.Visual()), wuc::Visual(m_detail.Visual()),
                                        wuc::Visual(m_trailing.Visual()) })
@@ -843,6 +1025,7 @@ ListRow::ListRow(const Ui& ui)
 void ListRow::Layout()
 {
     m_highlight.Resize(m_width, m_height, m_ui.Px(10.0f));
+    m_ripple.Resize(m_width, m_height, m_ui.Px(10.0f));
     Arrange();
 }
 
@@ -990,6 +1173,11 @@ void Spotlight::Hide()
 void ListRow::OnPressChanged(bool pressed)
 {
     Motion::SpringTo(m_root, L"Scale", pressed ? float3{ 0.98f, 0.98f, 1.0f } : float3{ 1.0f, 1.0f, 1.0f }, m_ui.motion->press);
+}
+
+void ListRow::OnPointerDown(float x, float y)
+{
+    m_ripple.Start(x, y);
 }
 
 void ListRow::OnClick()

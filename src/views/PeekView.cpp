@@ -84,7 +84,44 @@ void PeekView::Build()
     m_playing.Children().InsertAtTop(m_title->Visual());
     m_playing.Children().InsertAtTop(m_subtitle->Visual());
 
+    // Timer: the icon in an accent circle, the time big, what it is under
+    // it, and pause/resume and stop on the right.
+    m_timerLayer = container();
+    m_timerBadge = std::make_unique<RoundedRect>(ui, badge, badge, badge / 2.0f, ui.accent);
+    m_timerBadge->visual.Offset({ pad, badgeY, 0.0f });
+    m_timerLayer.Children().InsertAtTop(m_timerBadge->visual);
+    m_timerIcon = std::make_unique<Label>(ui, 16.0f, DWRITE_FONT_WEIGHT_NORMAL, true);
+    m_timerIcon->SetText(std::wstring(1, Glyph::Stopwatch));
+    m_timerIcon->SetPosition(pad + std::round((badge - m_timerIcon->Width()) / 2.0f), badgeY + std::round((badge - m_timerIcon->Height()) / 2.0f));
+    m_timerLayer.Children().InsertAtTop(m_timerIcon->Visual());
+    m_timerTime = std::make_unique<RollingText>(ui, 19.0f);
+    m_timerLayer.Children().InsertAtTop(m_timerTime->Visual());
+    m_timerCaption = std::make_unique<Label>(ui, 11.0f);
+    m_timerCaption->Visual().Opacity(0.6f);
+    m_timerLayer.Children().InsertAtTop(m_timerCaption->Visual());
+    m_timerPause = std::make_unique<IconButton>(ui, Glyph::Pause, 34.0f, 16.0f);
+    m_timerPause->SetBounds(playX, buttonY, button, button);
+    m_timerPause->onClick = [this] { if (m_actions.pauseResumeTimer) m_actions.pauseResumeTimer(); };
+    m_timerStop = std::make_unique<IconButton>(ui, Glyph::Cancel, 34.0f, 13.0f);
+    m_timerStop->SetBounds(nextX, buttonY, button, button);
+    m_timerStop->onClick = [this] { if (m_actions.stopTimer) m_actions.stopTimer(); };
+    for (IconButton* control : { m_timerPause.get(), m_timerStop.get() })
+    {
+        m_timerLayer.Children().InsertAtTop(control->Visual());
+        m_controls.Add(*control);
+    }
+
     Apply(false);
+}
+
+void PeekView::SetTimer(const TimerState& timer, const std::wstring& text)
+{
+    m_timer = timer;
+    m_timerText = text;
+    if (m_layer)
+    {
+        Apply(Visible());
+    }
 }
 
 void PeekView::SetMedia(const MediaState& media)
@@ -98,17 +135,44 @@ void PeekView::SetMedia(const MediaState& media)
 
 void PeekView::Apply(bool animate)
 {
+    const bool timer = m_timer.mode != TimerMode::None;
     const bool has = m_media.hasSession;
-    if (animate)
+    auto fade = [&](const winrt::Windows::UI::Composition::Visual& visual, float opacity)
     {
-        Motion::EaseTo(m_empty, L"Opacity", has ? 0.0f : 1.0f, 200);
-        Motion::EaseTo(m_playing, L"Opacity", has ? 1.0f : 0.0f, 200);
-    }
-    else
+        if (animate)
+        {
+            Motion::EaseTo(visual, L"Opacity", opacity, 200);
+        }
+        else
+        {
+            visual.StopAnimation(L"Opacity");
+            visual.Opacity(opacity);
+        }
+    };
+    fade(m_empty, !timer && !has ? 1.0f : 0.0f);
+    fade(m_playing, !timer && has ? 1.0f : 0.0f);
+    fade(m_timerLayer, timer ? 1.0f : 0.0f);
+    // Only the buttons on show take the mouse.
+    m_playPause->SetInteractive(!timer);
+    m_next->SetInteractive(!timer);
+    m_timerPause->SetInteractive(timer && !m_timer.finished);
+    m_timerStop->SetInteractive(timer);
+
+    if (timer)
     {
-        m_empty.Opacity(has ? 0.0f : 1.0f);
-        m_playing.Opacity(has ? 1.0f : 0.0f);
+        const float textX = m_timerBadge->visual.Offset().x + m_timerBadge->visual.Size().x + m_ui.Px(10.0f);
+        m_timerTime->SetText(m_timer.finished ? L"0:00" : m_timerText, animate);
+        m_timerCaption->SetText(m_timer.finished ? L"Time's up"
+                              : !m_timer.running ? L"Paused"
+                              : m_timer.mode == TimerMode::Countdown ? L"Timer" : L"Stopwatch");
+        const float block = m_timerTime->Height() + m_timerCaption->Height();
+        const float top = std::round((m_height - block) / 2.0f);
+        m_timerTime->SetPosition(textX, top);
+        m_timerCaption->SetPosition(textX, top + m_timerTime->Height());
+        m_timerPause->SetGlyph(m_timer.running ? Glyph::Pause : Glyph::Play, /*morph*/ true, animate);
+        m_timerPause->SetEnabled(!m_timer.finished);
     }
+
     m_playPause->SetEnabled(has && m_media.canPlayPause);
     m_next->SetEnabled(has && m_media.canNext);
     if (!has)

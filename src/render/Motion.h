@@ -48,6 +48,24 @@ namespace Motion
 
     // A smooth ease-out over a fixed time. Used for fades.
     void EaseTo(const CompositionObject& target, const wchar_t* property, float value, int durationMs, int delayMs = 0);
+    void EaseTo(const CompositionObject& target, const wchar_t* property, float2 value, int durationMs, int delayMs = 0);
+    void EaseTo(const CompositionObject& target, const wchar_t* property, float3 value, int durationMs, int delayMs = 0);
+
+    // A spring started with a speed (units per second) instead of from rest:
+    // how a reversed morph keeps going smoothly instead of stopping first.
+    void SpringTo(const CompositionObject& target, const wchar_t* property, float value, float velocity, const Spring& spring);
+    void SpringTo(const CompositionObject& target, const wchar_t* property, float2 value, float2 velocity, const Spring& spring);
+    void SpringTo(const CompositionObject& target, const wchar_t* property, float3 value, float3 velocity, const Spring& spring);
+
+    // Where a spring is, and how fast it moves (units per second), `seconds`
+    // after it set off from `from` at `velocity` towards `to` (a damped
+    // oscillator, as the compositor's springs are). Pure maths, unit-tested.
+    struct SpringPoint
+    {
+        float value;
+        float velocity;
+    };
+    SpringPoint SpringAt(const Spring& spring, float from, float velocity, float to, float seconds);
 
     // A repeating pulse between the current value and `low` (the "working"
     // shimmer). Stop it with target.StopAnimation(property).

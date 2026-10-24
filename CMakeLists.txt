@@ -52,6 +52,7 @@ add_library(IslandCore STATIC
     src/views/sections/NowPlayingSection.cpp
     src/views/sections/SoundSection.cpp
     src/views/sections/StatusSection.cpp
+    src/views/sections/TimerSection.cpp
     src/views/ControlKitDemo.cpp
     src/views/IdleView.cpp
     src/views/PeekView.cpp
@@ -66,6 +67,7 @@ add_library(IslandCore STATIC
     src/services/FullscreenWatcher.cpp
     src/services/KeepAwake.cpp
     src/services/SystemSleep.cpp
+    src/services/TimerService.cpp
     src/services/MediaService.cpp
     src/services/MediaState.cpp
     src/services/DisplayService.cpp
@@ -90,6 +92,7 @@ target_link_libraries(IslandCore PUBLIC
     wbemuuid        # WMI: laptop panel brightness
     shlwapi         # app names stored in resources (volume mixer)
     wtsapi32        # "you unlocked the PC" notifications
+    winmm           # the timer's alarm sound
 )
 
 # WIN32 = a windowed app (entry point wWinMain, no console window).

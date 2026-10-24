@@ -81,6 +81,61 @@ private:
     Graphics::Size m_size{};
 };
 
+// Text whose characters roll when they change, like a mechanical counter
+// (the timer, battery %): the old character slides up and out as the new one
+// slides in from below. Digits get equal widths, so the text doesn't jiggle.
+class RollingText
+{
+public:
+    RollingText(const Ui& ui, float sizeDip, DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_SEMI_BOLD);
+
+    winrt::Windows::UI::Composition::ContainerVisual Visual() const { return m_root; }
+    void SetText(std::wstring_view text, bool animate);
+    const std::wstring& Text() const { return m_text; }
+    float Width() const { return m_width; }
+    float Height() const { return m_height; }
+    void SetPosition(float x, float y);  // top-left corner, in pixels
+
+private:
+    struct Slot
+    {
+        winrt::Windows::UI::Composition::ContainerVisual box{ nullptr };
+        std::unique_ptr<Label> labels[2];
+        int shown = 0;
+        float width = 0.0f;
+    };
+    float SlotWidth(wchar_t ch) const;
+    void Rebuild();
+    void Place(Label& label, const Slot& slot, float y);
+
+    const Ui& m_ui;
+    float m_sizeDip;
+    DWRITE_FONT_WEIGHT m_weight;
+    winrt::Windows::UI::Composition::ContainerVisual m_root{ nullptr };
+    std::vector<Slot> m_slots;
+    std::wstring m_text;
+    float m_width = 0.0f, m_height = 0.0f, m_digitWidth = 0.0f;
+};
+
+// A soft circle of light that spreads from where you press (tiles, chips,
+// list rows) and fades, inside the control's own shape.
+class Ripple
+{
+public:
+    explicit Ripple(const Ui& ui);
+
+    winrt::Windows::UI::Composition::ShapeVisual Visual() const { return m_visual; }
+    void Resize(float width, float height, float radius);
+    void Start(float x, float y);
+
+private:
+    const Ui& m_ui;
+    winrt::Windows::UI::Composition::ShapeVisual m_visual{ nullptr };
+    winrt::Windows::UI::Composition::CompositionEllipseGeometry m_circle{ nullptr };
+    winrt::Windows::UI::Composition::CompositionRoundedRectangleGeometry m_bounds{ nullptr };
+    float m_width = 0.0f, m_height = 0.0f;
+};
+
 // Base class for everything you can hover and click. Each control is its own
 // group of GPU visuals, and every state change (hover, press, on/off,
 // disabled) is an animation, never a jump.
@@ -261,6 +316,7 @@ protected:
     void Layout() override;
 
 private:
+    Ripple m_ripple;
     RoundedRect m_background, m_selectedLayer, m_hoverLayer, m_iconOff, m_iconOn;
     Label m_icon, m_title, m_subtitle;
     ToggleSwitch m_switch;
@@ -281,7 +337,8 @@ public:
 
     void SetOn(bool on, bool animate);
     bool IsOn() const { return m_on; }
-    void SetGlyph(wchar_t glyph);
+    void SetGlyph(wchar_t glyph);  // 0 = words only
+    void SetLabel(std::wstring_view label);  // "" = icon only
     void SetOnColor(winrt::Windows::UI::Color color);
     void SetBusy(bool busy);   // a gentle pulse while Windows is switching
     float NaturalWidth() const;  // just fits the icon and the word
@@ -290,6 +347,7 @@ public:
 
     void OnHoverChanged(bool hovered) override;
     void OnPressChanged(bool pressed) override;
+    void OnPointerDown(float x, float y) override;
     void OnClick() override;
 
 protected:
@@ -298,6 +356,7 @@ protected:
 private:
     float FullBloom() const;
 
+    Ripple m_ripple;
     RoundedRect m_background, m_onLayer, m_hoverLayer;
     winrt::Windows::UI::Composition::CompositionEllipseGeometry m_bloom{ nullptr };  // the "on" colour spreads from the icon
     Label m_icon, m_label;
@@ -343,6 +402,7 @@ public:
 
     void OnHoverChanged(bool hovered) override;
     void OnPressChanged(bool pressed) override;
+    void OnPointerDown(float x, float y) override;
     void OnClick() override;
 
 protected:
@@ -351,6 +411,7 @@ protected:
 private:
     void Arrange();
 
+    Ripple m_ripple;
     RoundedRect m_highlight, m_iconOff, m_iconOn;
     Label m_icon, m_title, m_detail, m_trailing;
     Spotlight* m_spotlight = nullptr;

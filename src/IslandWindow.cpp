@@ -64,6 +64,40 @@ namespace
         }
     }
 
+    // The album's colour for the glow: the artwork's average, made vivid
+    // enough to read as a colour (a dark cover would give a muddy grey).
+    winrt::Windows::UI::Color ArtworkColor(IWICBitmapSource* artwork, winrt::Windows::UI::Color fallback)
+    {
+        UINT width = 0, height = 0;
+        if (!artwork || FAILED(artwork->GetSize(&width, &height)) || width == 0 || height == 0)
+        {
+            return fallback;
+        }
+        std::vector<uint8_t> pixels(static_cast<size_t>(width) * height * 4);
+        if (FAILED(artwork->CopyPixels(nullptr, width * 4, static_cast<UINT>(pixels.size()), pixels.data())))
+        {
+            return fallback;
+        }
+        double r = 0, g = 0, b = 0;
+        for (size_t i = 0; i < pixels.size(); i += 4)
+        {
+            b += pixels[i];
+            g += pixels[i + 1];
+            r += pixels[i + 2];
+        }
+        const double n = static_cast<double>(pixels.size() / 4) * 255.0;
+        r /= n; g /= n; b /= n;
+        // Hue kept; saturation and brightness raised to at least a vivid level.
+        const double high = std::max({ r, g, b }), low = std::min({ r, g, b });
+        if (high - low < 0.04)
+        {
+            return fallback;  // a grey cover has no colour to show
+        }
+        const double saturation = std::max(0.55, (high - low) / high), value = std::max(0.85, high);
+        auto channel = [&](double c) { return static_cast<uint8_t>(std::clamp(value * (1.0 - saturation * (high - c) / (high - low)), 0.0, 1.0) * 255.0); };
+        return { 255, channel(r), channel(g), channel(b) };
+    }
+
     template <typename T>
     void SetDwmAttribute(HWND hwnd, DWMWINDOWATTRIBUTE attribute, T value)
     {
@@ -196,7 +230,7 @@ void IslandWindow::ApplySettings(const Settings& settings)
     m_glass = settings.glass;
     m_showDelayMs = settings.games.showDelayMs;
     m_machine.SetTiming({ m_motion.hoverIntentMs, m_motion.leaveDelayMs, m_motion.expandedLeaveDelayMs, m_showDelayMs });
-    m_machine.SetAutoHide(m_layout.autoHide);
+    UpdateHold();
     Rebuild();
 }
 
@@ -302,6 +336,11 @@ void IslandWindow::Pose(IslandPose pose)
 void IslandWindow::SetMedia(const MediaState& media)
 {
     m_media = media;
+    if (media.artworkTrackId != m_glowTrack && media.artwork)
+    {
+        m_glowTrack = media.artworkTrackId;
+        m_glowColor = ArtworkColor(media.artwork.get(), m_ui.accent);
+    }
     if (State() != IslandState::Hidden)
     {
         PushMedia();
@@ -310,6 +349,10 @@ void IslandWindow::SetMedia(const MediaState& media)
 
 void IslandWindow::PushMedia()
 {
+    // A soft ring of the album's colour while it plays (nothing moves in it).
+    const IslandState state = State();
+    const bool showing = state == IslandState::Idle || state == IslandState::Peek || state == IslandState::Expanded;
+    m_visuals.SetGlow(m_glowColor, m_media.hasSession && m_media.playing, showing);
     m_idleView->SetMedia(m_media);
     m_peekView->SetMedia(m_media);
     m_controlCenter->SetMedia(m_media);
@@ -435,7 +478,7 @@ void IslandWindow::OpenControlKitDemo()
 
 void IslandWindow::StartTimer(IslandTimer timer, int milliseconds)
 {
-    SetTimer(m_hwnd, TimerId(timer), static_cast<UINT>(std::max(milliseconds, 1)), nullptr);
+    ::SetTimer(m_hwnd, TimerId(timer), static_cast<UINT>(std::max(milliseconds, 1)), nullptr);
 }
 
 void IslandWindow::StopTimer(IslandTimer timer)
@@ -524,6 +567,12 @@ void IslandWindow::EnterState(IslandState from, IslandState to)
         break;
     }
 
+    if (m_timer.mode != TimerMode::None)
+    {
+        PushTimer();  // the time may have moved on while it was out of sight
+    }
+    ScheduleTimerTick();
+
     if (m_onStateChanged)
     {
         m_onStateChanged(to);
@@ -591,8 +640,101 @@ IslandShape IslandWindow::ShapeFor(IslandState state) const
 
 bool IslandWindow::SlimLine() const
 {
-    // With auto-hide the island only shows while the mouse is on it, and then as the pill.
-    return m_slim && !m_layout.autoHide;
+    // With auto-hide the island only shows while the mouse is on it, and then
+    // as the pill; a running timer or the charging moment needs the pill too.
+    return m_slim && !m_layout.autoHide && !Held();
+}
+
+void IslandWindow::UpdateHold()
+{
+    const bool held = Held();
+    m_machine.SetAutoHide(m_layout.autoHide && !held);
+    if (held != m_held)
+    {
+        m_held = held;
+        if (!m_layout.autoHide && State() == IslandState::Idle)
+        {
+            ShowState(true);  // between the slim line and the pill
+        }
+    }
+}
+
+void IslandWindow::SetTimer(const TimerState& timer)
+{
+    m_timer = timer;
+    UpdateHold();  // a running timer keeps the pill down; paused or stopped, it may tuck away
+    PushTimer();
+    ScheduleTimerTick();
+}
+
+void IslandWindow::PushTimer()
+{
+    const std::wstring text = TimerText(m_timer, GetTickCount64());
+    m_idleView->SetTimer(m_timer, text);
+    m_peekView->SetTimer(m_timer, text);
+    m_controlCenter->SetTimer(m_timer, text);
+}
+
+void IslandWindow::ScheduleTimerTick()
+{
+    // Once a second, and only while a timer runs and the island shows: a
+    // tucked-away or hidden island has no timer of its own at all.
+    const IslandState state = State();
+    const bool showing = state == IslandState::Idle || state == IslandState::Peek || state == IslandState::Expanded;
+    if (!m_timer.running || !showing)
+    {
+        if (m_timerTick)
+        {
+            m_timerTick.Stop();
+        }
+        return;
+    }
+    if (!m_timerTick)
+    {
+        m_timerTick = m_queue.CreateTimer();
+        m_timerTick.IsRepeating(false);
+        m_timerTick.Tick([this](auto&&, auto&&)
+        {
+            PushTimer();
+            ScheduleTimerTick();
+        });
+    }
+    // Just after the shown second changes.
+    const uint64_t now = GetTickCount64();
+    int64_t wait = m_timer.mode == TimerMode::Countdown ? TimerRemainingMs(m_timer, now) % 1000 : 1000 - TimerElapsedMs(m_timer, now) % 1000;
+    if (wait <= 0)
+    {
+        wait = 1000;
+    }
+    m_timerTick.Stop();
+    m_timerTick.Interval(std::chrono::milliseconds(wait + 15));
+    m_timerTick.Start();
+}
+
+void IslandWindow::ShowChargingMoment(int percent)
+{
+    if (State() == IslandState::Hidden)
+    {
+        return;  // never over a game or a video
+    }
+    m_chargingMoment = true;
+    UpdateHold();  // comes down if it was tucked away
+    m_idleView->SetCharging(true, percent);
+    if (!m_chargingEnd)
+    {
+        m_chargingEnd = m_queue.CreateTimer();
+        m_chargingEnd.IsRepeating(false);
+        m_chargingEnd.Interval(std::chrono::milliseconds(3200));
+        m_chargingEnd.Tick([this](auto&&, auto&&)
+        {
+            m_chargingEnd.Stop();
+            m_chargingMoment = false;
+            m_idleView->SetCharging(false, 0);
+            UpdateHold();
+        });
+    }
+    m_chargingEnd.Stop();
+    m_chargingEnd.Start();
 }
 
 void IslandWindow::ShowState(bool animate)
@@ -634,7 +776,7 @@ void IslandWindow::ShowState(bool animate)
         m_visuals.MorphTo(shape, m_motion.morph, true, [this, width, height] { ResizeWindow(width, height); });
         if (state == IslandState::Tucked)
         {
-            SetTimer(m_hwnd, kTuckTimer, kTuckShrinkMs, nullptr);
+            ::SetTimer(m_hwnd, kTuckTimer, kTuckShrinkMs, nullptr);
         }
     }
     else
@@ -715,7 +857,7 @@ void IslandWindow::SchedulePlacement()
 {
     // Calling SetTimer again with the same ID restarts it, so a burst of
     // display messages results in a single reposition.
-    SetTimer(m_hwnd, kPlacementTimer, kPlacementDelayMs, nullptr);
+    ::SetTimer(m_hwnd, kPlacementTimer, kPlacementDelayMs, nullptr);
 }
 
 // --- Mouse -------------------------------------------------------------------
@@ -737,6 +879,7 @@ void IslandWindow::SetPointerInside(bool inside)
         {
             view->Controls().PointerLeave();
         }
+        m_visuals.SetPointer(false, 0.0f, 0.0f);
         m_machine.PointerLeft();
     }
 }
@@ -754,6 +897,13 @@ void IslandWindow::OnMouseMove(POINT point)
         TrackMouseEvent(&track);
     }
     SetPointerInside(inside);
+    if (inside)
+    {
+        // In the pill's own pixels (it hangs, centred, from the top).
+        const IslandShape shape = ShapeFor(State());
+        m_visuals.SetPointer(true, static_cast<float>(point.x) - (static_cast<float>(m_windowSize.cx) - shape.width) / 2.0f,
+                             static_cast<float>(point.y) - shape.top);
+    }
 
     if (View* view = InteractiveView())
     {

@@ -87,6 +87,11 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
         m_keepAwake.Set(on);
         m_island.SetKeepAwake(m_keepAwake.On());
     };
+    actions.startTimer = [this](int minutes) { m_timer.StartCountdown(minutes); };
+    actions.startStopwatch = [this] { m_timer.StartStopwatch(); };
+    actions.pauseResumeTimer = [this] { m_timer.PauseResume(); };
+    actions.addTimerMinute = [this] { m_timer.AddMinute(); };
+    actions.stopTimer = [this] { m_timer.Stop(); };
     actions.sleepNow = []
     {
         // A moment's pause, so the button's press shows and your click is
@@ -116,7 +121,18 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
     m_radios.Start([this](const RadiosState& radios) { m_island.SetRadios(radios); });
     m_wifi.Start([this](const WifiState& wifi) { m_island.SetWifi(wifi); });
     m_bluetooth.Start([this](const BluetoothState& bluetooth) { m_island.SetBluetooth(bluetooth); });
-    m_power.Start([this](const PowerState& power) { m_island.SetPower(power); });
+    m_power.Start([this](const PowerState& power)
+    {
+        // The charger was just plugged in (not at start, and only with a battery).
+        if (m_powerKnown && power.hasBattery && power.pluggedIn && !m_wasPluggedIn)
+        {
+            m_island.ShowChargingMoment(power.percent);
+        }
+        m_powerKnown = true;
+        m_wasPluggedIn = power.pluggedIn;
+        m_island.SetPower(power);
+    });
+    m_timer.Start([this](const TimerState& timer) { m_island.SetTimer(timer); });
     m_nightLight.Start([this](const NightLightState& nightLight) { m_island.SetNightLight(nightLight); });
     m_displays.Start([this](const DisplaysState& displays) { m_island.SetDisplays(displays); });
     m_island.OnDisplaysChanged([this]
@@ -153,6 +169,29 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
     if (const IslandPose pose = PoseFromCommandLine(commandLine); pose != IslandPose::None)
     {
         m_island.Pose(pose);
+    }
+
+    // Tests only (hands-free checks): start a timer or the stopwatch, or play
+    // the charging moment, as if you had clicked or plugged in the charger.
+    if (const size_t at = commandLine.find(L"--timer "); at != std::wstring_view::npos)
+    {
+        m_timer.StartCountdown(_wtoi(std::wstring(commandLine.substr(at + 8)).c_str()));
+    }
+    if (commandLine.find(L"--stopwatch") != std::wstring_view::npos)
+    {
+        m_timer.StartStopwatch();
+    }
+    if (commandLine.find(L"--charging-moment") != std::wstring_view::npos)
+    {
+        auto later = winrt::Windows::System::DispatcherQueue::GetForCurrentThread().CreateTimer();
+        later.IsRepeating(false);
+        later.Interval(std::chrono::milliseconds(1500));  // once the island is up
+        later.Tick([this, later](auto&&, auto&&) mutable
+        {
+            later.Stop();
+            m_island.ShowChargingMoment(m_power.Current().percent);
+        });
+        later.Start();
     }
     return true;
 }

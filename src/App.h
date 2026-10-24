@@ -17,6 +17,7 @@
 #include "services/FullscreenWatcher.h"
 #include "services/KeepAwake.h"
 #include "services/SystemSleep.h"
+#include "services/TimerService.h"
 #include "services/MediaService.h"
 #include "services/RadioService.h"
 
@@ -51,4 +52,7 @@ private:
     NightLightService m_nightLight;
     DisplayService m_displays;
     KeepAwake m_keepAwake;
+    TimerService m_timer;
+    bool m_powerKnown = false;
+    bool m_wasPluggedIn = false;
 };

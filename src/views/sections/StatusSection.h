@@ -36,7 +36,8 @@ private:
     NightLightState m_nightLight;
     bool m_keepAwake = false;
     float m_x = 0.0f, m_y = 0.0f, m_width = 0.0f;
-    std::unique_ptr<Label> m_time, m_date, m_batteryIcon, m_percent, m_detail;
+    std::unique_ptr<Label> m_time, m_date, m_batteryIcon, m_detail;
+    std::unique_ptr<RollingText> m_percent;  // rolls when the charge changes
     std::unique_ptr<ToggleChip> m_mic, m_nightLightChip, m_keepAwakeChip, m_sleepChip;
     winrt::Windows::System::DispatcherQueueTimer m_tick{ nullptr };
     bool m_running = false;

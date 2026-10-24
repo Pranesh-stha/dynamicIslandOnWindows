@@ -17,7 +17,7 @@ void ControlCenter::Build()
 
     const float pad = ui.Px(24.0f);
     const float inner = width - 2.0f * pad;
-    for (Section* section : std::initializer_list<Section*>{ &m_status, &m_nowPlaying, &m_sound, &m_displays, &m_connections })
+    for (Section* section : std::initializer_list<Section*>{ &m_status, &m_nowPlaying, &m_timer, &m_sound, &m_displays, &m_connections })
     {
         section->Reset();
     }
@@ -48,7 +48,8 @@ void ControlCenter::Build()
     const float connectionsWidth = available - nowPlayingWidth - soundWidth - displaysWidth;
     float x = pad;
     float bottom = y;
-    bottom = std::max(bottom, m_nowPlaying.Build(m_parts[1], m_controls, x, y, nowPlayingWidth));
+    const float playingBottom = m_nowPlaying.Build(m_parts[1], m_controls, x, y, nowPlayingWidth);
+    bottom = std::max(bottom, m_timer.Build(m_parts[1], m_controls, x, playingBottom + ui.Px(14.0f), nowPlayingWidth));
     x += nowPlayingWidth + gap;
     bottom = std::max(bottom, m_sound.Build(m_parts[2], m_controls, x, y, soundWidth));
     x += soundWidth + gap;
@@ -60,7 +61,7 @@ void ControlCenter::Build()
 
 void ControlCenter::OnVisibilityChanged(bool visible)
 {
-    for (Section* section : std::initializer_list<Section*>{ &m_status, &m_nowPlaying, &m_sound, &m_displays, &m_connections })
+    for (Section* section : std::initializer_list<Section*>{ &m_status, &m_nowPlaying, &m_timer, &m_sound, &m_displays, &m_connections })
     {
         section->OnVisibilityChanged(visible);
     }

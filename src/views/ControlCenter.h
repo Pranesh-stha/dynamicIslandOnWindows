@@ -19,6 +19,7 @@
 #include "views/sections/NowPlayingSection.h"
 #include "views/sections/SoundSection.h"
 #include "views/sections/StatusSection.h"
+#include "views/sections/TimerSection.h"
 
 // The full panel a click opens: a wide, horizontal layout.
 //
@@ -35,6 +36,7 @@ public:
         : View(ui, std::move(parent)),
           m_status(ui, actions),
           m_nowPlaying(ui, actions),
+          m_timer(ui, actions),
           m_sound(ui, actions),
           m_displays(ui, actions),
           m_connections(ui, actions)
@@ -50,6 +52,7 @@ public:
     }
     void SetNightLight(const NightLightState& nightLight) { m_status.SetNightLight(nightLight, Visible()); }
     void SetKeepAwake(bool on) { m_status.SetKeepAwake(on, Visible()); }
+    void SetTimer(const TimerState& timer, const std::wstring& text) { m_timer.SetTimer(timer, text, Visible()); }
     void SetRadios(const RadiosState& radios) { m_connections.SetRadios(radios, Visible()); }
     void SetWifi(const WifiState& wifi) { m_connections.SetWifi(wifi, Visible()); }
     void SetBluetooth(const BluetoothState& bluetooth) { m_connections.SetBluetooth(bluetooth, Visible()); }
@@ -69,6 +72,7 @@ private:
     // Visible() as "animate".
     StatusSection m_status;
     NowPlayingSection m_nowPlaying;
+    TimerSection m_timer;
     SoundSection m_sound;
     DisplaysSection m_displays;
     ConnectionsSection m_connections;

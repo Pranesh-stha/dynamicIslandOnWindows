@@ -26,6 +26,7 @@
 #include "services/BrightnessService.h"
 #include "services/MediaState.h"
 #include "services/RadioService.h"
+#include "services/TimerService.h"
 #include "views/Actions.h"
 
 class View;
@@ -89,6 +90,10 @@ public:
     void SetPower(const PowerState& power);
     void SetNightLight(const NightLightState& nightLight);
     void SetKeepAwake(bool on);
+    void SetTimer(const TimerState& timer);
+    // The charger was just plugged in: the pill comes down for a few seconds
+    // with a battery filling up. Never while something is fullscreen.
+    void ShowChargingMoment(int percent);
     void SetDisplays(const DisplaysState& displays);
 
     // Opens the panel with one of every control (tray menu).
@@ -128,6 +133,12 @@ private:
     View* InteractiveView() const;
     IslandShape ShapeFor(IslandState state) const;
     bool SlimLine() const;  // idle shows the slim line (a maximized window is under it)
+    // The pill stays down (no tucking away, no slim line) while a timer counts
+    // or says "Time's up", and during the charging moment.
+    bool Held() const { return TimerHoldsPill(m_timer) || m_chargingMoment; }
+    void UpdateHold();
+    void PushTimer();
+    void ScheduleTimerTick();
     void ShowState(bool animate);
     void ResizeWindow(float width, float height);
     void UpdateGlass();  // clear glass on/off and the screen strip it copies
@@ -168,6 +179,13 @@ private:
     PowerState m_power;
     NightLightState m_nightLight;
     bool m_keepAwake = false;
+    TimerState m_timer;
+    bool m_chargingMoment = false;
+    bool m_held = false;
+    winrt::Windows::System::DispatcherQueueTimer m_timerTick{ nullptr };    // the shown second changed
+    winrt::Windows::System::DispatcherQueueTimer m_chargingEnd{ nullptr };  // the charging moment is over
+    winrt::Windows::UI::Color m_glowColor{ 255, 64, 156, 255 };
+    uint64_t m_glowTrack = ~0ull;  // the song the glow's colour was taken from
     DisplaysState m_displays;
     std::function<void(IslandState)> m_onStateChanged;
     std::function<void()> m_onDisplaysChanged;

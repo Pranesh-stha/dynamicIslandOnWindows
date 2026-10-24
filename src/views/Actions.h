@@ -27,6 +27,13 @@ struct IslandActions
     std::function<void(bool on)> setKeepAwake;
     std::function<void()> sleepNow;  // the PC sleeps (locked first)
 
+    // Timer and stopwatch
+    std::function<void(int minutes)> startTimer;
+    std::function<void()> startStopwatch;
+    std::function<void()> pauseResumeTimer;
+    std::function<void()> addTimerMinute;
+    std::function<void()> stopTimer;  // also dismisses "Time's up"
+
     // Displays
     std::function<void(const std::wstring& display, float value)> setBrightness;  // 0..1
     std::function<void(Projection projection)> setProjection;                    // like Win+P
