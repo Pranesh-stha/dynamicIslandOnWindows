@@ -28,13 +28,18 @@ namespace
         }
     };
 
-    // ...and this when the default output device changes (headphones plugged in).
+    // ...and this when the default output or microphone changes (headphones plugged in).
     struct DeviceEvents : winrt::implements<DeviceEvents, IMMNotificationClient>
     {
         std::function<void()> onDefaultChanged;
+        std::function<void()> onDefaultMicChanged;
 
         HRESULT __stdcall OnDefaultDeviceChanged(EDataFlow flow, ERole role, LPCWSTR) noexcept override
         {
+            if (flow == eCapture && role == eConsole && onDefaultMicChanged)
+            {
+                onDefaultMicChanged();
+            }
             if (flow == eRender && role == eMultimedia && onDefaultChanged)
             {
                 onDefaultChanged();
@@ -187,6 +192,10 @@ AudioService::~AudioService()
 {
     m_alive.reset();
     Unbind();
+    if (m_mic)
+    {
+        m_mic->UnregisterControlChangeNotify(m_micEvents.get());
+    }
     if (m_devices && m_deviceEvents)
     {
         m_devices->UnregisterEndpointNotificationCallback(m_deviceEvents.get());
@@ -230,6 +239,24 @@ void AudioService::Start(std::function<void(const AudioState&)> onChange)
     };
     m_volumeEvents = volumeEvents.as<IAudioEndpointVolumeCallback>();
 
+    auto micEvents = winrt::make_self<VolumeEvents>();
+    micEvents->onChange = [queue, alive, this, own](float, bool muted, GUID context)
+    {
+        if (context == own)
+        {
+            return;
+        }
+        queue.TryEnqueue([alive, this, muted]
+        {
+            if (!alive.expired())
+            {
+                m_state.micMuted = muted;
+                Publish();
+            }
+        });
+    };
+    m_micEvents = micEvents.as<IAudioEndpointVolumeCallback>();
+
     auto deviceEvents = winrt::make_self<DeviceEvents>();
     deviceEvents->onDefaultChanged = [queue, alive, this]
     {
@@ -238,6 +265,17 @@ void AudioService::Start(std::function<void(const AudioState&)> onChange)
             if (!alive.expired())
             {
                 Bind();
+            }
+        });
+    };
+    deviceEvents->onDefaultMicChanged = [queue, alive, this]
+    {
+        queue.TryEnqueue([alive, this]
+        {
+            if (!alive.expired())
+            {
+                BindMic();
+                Publish();
             }
         });
     };
@@ -261,13 +299,48 @@ void AudioService::Start(std::function<void(const AudioState&)> onChange)
     };
     m_sessionCreated = sessionCreated.as<IAudioSessionNotification>();
 
+    BindMic();
     Bind();
+}
+
+void AudioService::BindMic()
+{
+    if (m_mic)
+    {
+        m_mic->UnregisterControlChangeNotify(m_micEvents.get());
+        m_mic = nullptr;
+    }
+    m_state.micAvailable = false;
+    m_state.micMuted = false;
+    m_state.mic.clear();
+    winrt::com_ptr<IMMDevice> device;
+    if (SUCCEEDED(m_devices->GetDefaultAudioEndpoint(eCapture, eConsole, device.put())) &&
+        SUCCEEDED(device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_INPROC_SERVER, nullptr, m_mic.put_void())))
+    {
+        m_mic->RegisterControlChangeNotify(m_micEvents.get());
+        BOOL muted = FALSE;
+        m_mic->GetMute(&muted);
+        m_state.micAvailable = true;
+        m_state.micMuted = muted != FALSE;
+        m_state.mic = DeviceName(device.get());
+        Log::Info(L"audio: microphone is {}{}", m_state.mic.empty() ? L"(unnamed)" : m_state.mic, m_state.micMuted ? L" (muted)" : L"");
+    }
+    else
+    {
+        m_mic = nullptr;
+        Log::Info(L"audio: no microphone");
+    }
 }
 
 void AudioService::Bind()
 {
     Unbind();
-    m_state = AudioState{};
+    // A new output device: start over, except for the microphone.
+    AudioState fresh;
+    fresh.micAvailable = m_state.micAvailable;
+    fresh.micMuted = m_state.micMuted;
+    fresh.mic = m_state.mic;
+    m_state = std::move(fresh);
     winrt::com_ptr<IMMDevice> device;
     if (SUCCEEDED(m_devices->GetDefaultAudioEndpoint(eRender, eMultimedia, device.put())) &&
         SUCCEEDED(device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_INPROC_SERVER, nullptr, m_endpoint.put_void())))
@@ -521,6 +594,33 @@ void AudioService::ToggleAppMute(const std::wstring& key)
         }
     }
     UpdateApps();
+    Publish();
+}
+
+void AudioService::ToggleMicMute()
+{
+    if (!m_mic)
+    {
+        return;
+    }
+    const bool mute = !m_state.micMuted;
+    winrt::com_ptr<IMMDeviceCollection> mics;
+    if (SUCCEEDED(m_devices->EnumAudioEndpoints(eCapture, DEVICE_STATE_ACTIVE, mics.put())))
+    {
+        UINT count = 0;
+        mics->GetCount(&count);
+        for (UINT i = 0; i < count; ++i)
+        {
+            winrt::com_ptr<IMMDevice> device;
+            winrt::com_ptr<IAudioEndpointVolume> volume;
+            if (SUCCEEDED(mics->Item(i, device.put())) &&
+                SUCCEEDED(device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_INPROC_SERVER, nullptr, volume.put_void())))
+            {
+                volume->SetMute(mute, &m_ownChanges);
+            }
+        }
+    }
+    m_state.micMuted = mute;
     Publish();
 }
 

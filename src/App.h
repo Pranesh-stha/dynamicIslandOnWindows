@@ -9,6 +9,8 @@
 #include "platform/Tray.h"
 #include "services/AudioService.h"
 #include "services/BluetoothService.h"
+#include "services/DisplayService.h"
+#include "services/NightLightService.h"
 #include "services/PowerService.h"
 #include "services/WifiService.h"
 #include "services/BrightnessService.h"
@@ -44,4 +46,6 @@ private:
     WifiService m_wifi;
     BluetoothService m_bluetooth;
     PowerService m_power;
+    NightLightService m_nightLight;
+    DisplayService m_displays;
 };

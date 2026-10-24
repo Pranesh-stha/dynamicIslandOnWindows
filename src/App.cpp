@@ -68,6 +68,16 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
     actions.toggleMute = [this] { m_audio.ToggleMute(); };
     actions.setAppVolume = [this](const std::wstring& app, float volume) { m_audio.SetAppVolume(app, volume); };
     actions.toggleAppMute = [this](const std::wstring& app) { m_audio.ToggleAppMute(app); };
+    actions.toggleMicMute = [this] { m_audio.ToggleMicMute(); };
+    actions.setNightLight = [this](bool on)
+    {
+        if (!m_nightLight.Set(on))
+        {
+            OpenWithDefaultApp(L"ms-settings:nightlight");
+        }
+    };
+    actions.setEnergySaver = [this](bool on) { m_power.SetEnergySaver(on); };
+    actions.setProjection = [this](Projection projection) { m_displays.SetProjection(projection); };
     actions.setBrightness = [this](const std::wstring& display, float value) { m_brightness.Set(display, value); };
     actions.setWifi = [this](bool on) { m_radios.SetWifi(on); };
     actions.setBluetooth = [this](bool on) { m_radios.SetBluetooth(on); };
@@ -83,8 +93,15 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
     m_radios.Start([this](const RadiosState& radios) { m_island.SetRadios(radios); });
     m_wifi.Start([this](const WifiState& wifi) { m_island.SetWifi(wifi); });
     m_bluetooth.Start([this](const BluetoothState& bluetooth) { m_island.SetBluetooth(bluetooth); });
+    m_power.onCantSwitch = [] { OpenWithDefaultApp(L"ms-settings:batterysaver"); };
     m_power.Start([this](const PowerState& power) { m_island.SetPower(power); });
-    m_island.OnDisplaysChanged([this] { m_brightness.Refresh(); });
+    m_nightLight.Start([this](const NightLightState& nightLight) { m_island.SetNightLight(nightLight); });
+    m_displays.Start([this](const DisplaysState& displays) { m_island.SetDisplays(displays); });
+    m_island.OnDisplaysChanged([this]
+    {
+        m_brightness.Refresh();
+        m_displays.Refresh();
+    });
 
     m_island.OnStateChanged([this](IslandState state)
     {

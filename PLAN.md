@@ -4,10 +4,10 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 
 ## 0. Current status (read this first)
 
-- **Current phase:** Phases 2–5, **5b (the wide control center)** and **5c (auto-hide, knob-less sliders, lighter glass)** are built and verified. The island hides for games and now also stays **out of sight until you push the mouse to the top-middle of the screen** (like your auto-hide taskbar); then it slides down as the pill, opens Peek on hover and the control center on click. The control center is wide: time/date/battery, now playing, volume + per-app mixer, brightness, Wi-Fi/Bluetooth lists. **Next: Phase 6, "Displays."**
-- Hands-on checks are left for you in the Phase 1–5c lists (real games and PresentMon, how the motion and the auto-hide *feel*, dragging the sliders, toggling Wi-Fi/Bluetooth, joining a network, connecting headphones). It doesn't start at login yet (Phase 7).
+- **Current phase:** Phases 2–6 are built and verified, including 5b (wide control center), 5c (auto-hide) and **6 (displays + quick toggles)**. The island hides for games and stays out of sight until you push the mouse to the top-middle; then it slides down, opens Peek on hover and the control center on click, and shrinks back up into the edge when you leave. The control center: time/date, **Microphone / Night light / Energy saver** toggles, battery, now playing, volume + per-app mixer, brightness per display with refresh rate, **projection modes (like Win+P)**, Wi-Fi/Bluetooth lists. **Next: Phase 7, "Daily-driver hardening"** (start at login, crash restart, sleep/resume, soak test), or the motion polish you pick from "Later ideas".
+- Hands-on checks are left for you in the Phase 1–6 lists. Most important now: **click Night light and Energy saver once each** (no official Windows switch exists for either), mute the mic, and try a projection mode.
 - ⚠ Two crashes were found and fixed on 2026-10-24 (§12): an Island crash on an empty media object, and **DWM (the Windows compositor) crashing** when a rebuilt panel released objects with springs still running. None since.
-- **Last updated:** 2026-10-24 13:19 NPT (UTC+05:45)
+- **Last updated:** 2026-10-24 13:50 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
@@ -150,10 +150,10 @@ There is no setting to change; it just follows the primary monitor. With a colle
 └────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Header:** time and date (your locale's format), battery % with its icon, and "Charging · 45 min to full" / "2 h 10 min left" / "Plugged in".
+- **Header:** time and date (your locale's format); three quick toggles in the middle: **Microphone** (mutes every mic; red while muted), **Night light**, **Energy saver**; battery % with its icon, and "Charging · 45 min to full" / "2 h 10 min left" / "Plugged in". Right-click a toggle for its Settings page.
 - **Now playing:** artwork, title/artist/app (click the app name to switch apps), ⏮ ⏯ ⏭ and a progress bar.
 - **Sound:** the main volume (caption = output device) and a **mixer**: one slider per app playing sound (up to 4 rows; an app keeps its row while it plays, so sliders never swap under the mouse). Click an icon to mute.
-- **Displays:** a brightness slider per monitor.
+- **Displays:** a brightness slider per monitor, each named with its refresh rate ("Legion 27Q-10 · 144 Hz"; click the name for Settings › Display). With a second display plugged in, **Project**: PC screen only / Duplicate / Extend / Second screen only (the same as Win+P; the current one is lit).
 - **Connections:** Wi-Fi and Bluetooth tiles. The switch turns the radio on/off; clicking the rest of the tile shows its list below:
   - **Wi-Fi:** networks in range (connected → saved → strongest). Click one to join. Saved and open networks connect directly. A new password-protected network opens Windows' own Wi-Fi list, because the island can't take keyboard focus to type a password (see §11).
   - **Bluetooth:** paired devices (connected → headphones/speakers → name). Click headphones or speakers to connect/disconnect. Other devices (mice, keyboards, phones) open Settings → Bluetooth, since Windows connects those itself.
@@ -233,7 +233,8 @@ windowsUI/
       WifiService.*          networks in range, scan, join / disconnect (Windows.Devices.WiFi)
       BluetoothService.*     paired + nearby devices (DeviceWatcher), connect audio devices, pair
       PowerService.*         battery %, charging, time left / to full (PowerManager, Battery)
-      DisplayService.*       connected monitors, open Settings pages
+      DisplayService.*       connected displays, refresh rates, projection mode (Win+P) read and switched
+      NightLightService.*    night light on/off (Windows' settings record; registry change notifications)
     platform/
       Tray.*  Startup.*  Settings.*  Log.*
   config/
@@ -357,11 +358,17 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
   - ✅ Tucked: 0.0 ms CPU over 60 s, 32.8 MB RAM; no crashes in the event log.
   - ⬜ (you) Does pushing the mouse to the top-middle feel right? Is 300 DIP wide enough or too wide (`layout.revealWidth`)? Is the glass light enough (`glass.tintOpacity`, lower = clearer)? `tests\fullscreen_test.ps1` wasn't re-run (it moves your mouse; the fullscreen rules didn't change, and the unit tests cover hidden ↔ tucked).
 
-### Phase 6: Displays
-- List connected monitors by friendly name.
-- Clicking one opens `ms-settings:display`.
-- Optional: an Extend / Duplicate / Second-screen-only switch (like Win+P).
-- **Done when:** the list updates live on plug/unplug.
+### Phase 6: Displays (+ quick toggles) ✅ built (2026-10-24)
+- ✅ Displays are listed by friendly name with their refresh rate; clicking a name opens `ms-settings:display`.
+- ✅ **Projection** (like Win+P), shown once a second display is plugged in: PC screen only / Duplicate / Extend / Second screen only, read with `QueryDisplayConfig` and switched with `SetDisplayConfig` on a background thread (the same documented calls Win+P uses). The current mode is lit; the chosen one pulses until Windows has switched.
+- ✅ Re-read on every display change (`WM_DISPLAYCHANGE`, after the 250 ms settle), and the column is rebuilt when the projection list appears or goes.
+- ✅ Also in this round (your request): header toggles for **Microphone** (Core Audio: mutes every active mic, follows the default mic), **Night light** (E18), **Energy saver** (E19); the control center now **shrinks and slides up into the top edge** when it closes with auto-hide, and fades only at the very end.
+- **Done when:**
+  - ✅ Release and Debug build with no warnings; 211 unit checks (new: night light record read/switch on your two real records, damaged records left alone; energy saver plan; projection mapping; refresh rate; display captions).
+  - ✅ `--hardware` (222 checks, all read-only for the new parts): night light on (record understood), microphone "Microphone Array", energy saver off (newer status, correct while plugged in), 2 displays connected in Extend, 2560×1600 @ 165 Hz and 2560×1440 @ 144 Hz.
+  - ✅ Hands-free screenshot of the new header and Displays column; closing timeline: the panel shrinks from 1452 to ~570 px in ~140 ms and slides up out of sight (before: it faded out in place). Tucked: 0.0 ms CPU over 60 s, 33.5 MB; no crashes.
+  - ⬜ (you) **Click Night light and Energy saver once each**: neither has an official Windows switch, and I didn't switch them for you (it would have changed your screen/power). If one does nothing, tell me. Energy saver puts itself back and opens Settings if Windows doesn't follow within 4 s.
+  - ⬜ (you) Mute/unmute the mic; try a projection mode (your Legion goes dark for "PC screen only"; click Extend on the laptop screen to get it back); unplug the Legion and check the Project list disappears.
 
 ### Phase 7: Daily-driver hardening
 - Start at login (Run key) plus an install script.
@@ -373,6 +380,8 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
 - **Done when:** it runs for a week without you thinking about it.
 
 ### Later ideas (not committed)
+- **Motion polish candidates** (discussed 2026-10-24, waiting for your pick): content that slides with the morph, staggered entrances, a hover highlight that glides between list rows, press feedback from the click point, a slider that grows while dragging, value bubbles on sliders, a lit edge that follows the mouse, toggle colour bloom, rolling numbers for percentages, a soft glow while something plays. See the chat for details.
+- Lighter blur: Windows' blur strength can't be changed; a capture-based glass with our own blur would cost GPU time and battery (and needs screen capture), so it's parked.
 - Carry the current speed into a reversed morph (compute the spring's velocity ourselves and pass it as `InitialVelocity`). Positions are already continuous.
 - Replace Windows' own volume/brightness popup with the island. Hiding the built-in one is hacky and fragile.
 - Notifications, timer/stopwatch, charging animation.
@@ -487,6 +496,9 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
 | E14 | Can't type a Wi-Fi password into the island | The island never takes keyboard focus (it would steal it from games) | Saved and open networks join directly; new secured networks open Windows' own Wi-Fi list (`ms-availablenetworks:`) |
 | E15 | "Connect" does nothing for a mouse or phone | Windows has no public "connect" call for Bluetooth; Island sends the audio driver's reconnect/disconnect request, which only headphones and speakers have | Only audio devices get connect/disconnect; others open Settings → Bluetooth |
 | E16 | Mixer sliders swap places under the mouse | Apps start and stop sound all the time | An app keeps its row while it has a session; rows aren't reassigned during a drag |
+| E18 | Night light button does nothing, or stops working after a Windows update | No public API: Island edits the same small settings record Quick Settings writes (`bluelightreductionstate` and its per-device copy) | The record is checked byte by byte first; one that doesn't look right is never written, and the button opens Settings instead. Registry change notifications keep the button in step with Quick Settings and the schedule |
+| E19 | Energy saver button doesn't switch | No public "on now" call | Island sets the documented "start at battery level" power setting to 100 % (= always, like Settings' "Always use energy saver") and puts your own levels back when you turn it off (kept in `HKCU\Software\Island`, so it survives a restart). If Windows hasn't switched within 4 s, everything is put back and Settings opens |
+| E20 | A projection click blanks a screen | "PC screen only" / "Second screen only" turn a display off, like Win+P | Same as Win+P; the island follows to the screen that stays on, where Extend brings the other back |
 | E17 | An app vanishes from the mixer after pausing | Browsers close their audio stream a while after a video pauses (Windows' own mixer drops it too) | Expected; it comes back when the app plays again |
 
 ### F. Lifecycle & reliability
@@ -569,6 +581,12 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-24 | Revealing pill slides down from above the top edge and fades in (90 ms); tucking slides up and fades out (160 ms) |
 | 2026-10-24 | Sliders have no knob: a thick rounded bar (8 DIP, 10 DIP when hovered or held), the filled part is the level (your request) |
 | 2026-10-24 | Lighter glass: tint 0.55 → 0.42 (your request: "a bit more translucent"); still tunable live with `glass.tintOpacity` |
+| 2026-10-24 | Quick toggles (Microphone, Night light, Energy saver) sit in the header's empty middle, so the panel doesn't grow. A muted mic is red, the others use the accent |
+| 2026-10-24 | Mic mute applies to every active microphone (so no app can listen through another one); unmute unmutes them all |
+| 2026-10-24 | Night light and energy saver use Windows' own settings (no public switch exists); both check before writing and fall back to opening Settings |
+| 2026-10-24 | Projection modes appear only with 2+ displays connected; switching runs off the UI thread; tests never switch it |
+| 2026-10-24 | Closing with auto-hide: the panel shrinks and slides up into the edge at full opacity, fading only at the end (190 ms delay, 110 ms fade); the window drops to the strip 310 ms after |
+| 2026-10-24 | The blur strength stays Windows' own (it can't be changed through the compositor); see "Later ideas" |
 
 ## 12. Update log
 
@@ -576,6 +594,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 13:50 | **Phase 6 + quick toggles** (your request: night light and energy saver buttons, mic mute, Phase 6, a closing animation, less blur, animation ideas). New: `services/DisplayService.*`, `services/NightLightService.*`, widget `ToggleChip`; `AudioService` gained the microphone, `PowerService` energy saver (and the newer `GUID_ENERGY_SAVER_STATUS`, because the older status says "not available" while plugged in); the Displays column gained names with refresh rates and the Project list; the header gained the three toggles; columns 0.24/0.25/0.19/0.32. **Checked:** builds clean (Release + Debug), 211 unit checks, `--hardware` 222 (read-only for everything new), screenshots, closing timeline, 0.0 ms CPU tucked, 33.5 MB, no crashes. **Not checked by me:** switching night light, energy saver or the projection (each would have changed your screen or power settings): please click them once. **Blur:** not changed. The glass uses Windows' own blur, whose strength apps can't set (details in the chat). |
 | 2026-10-24 13:19 | **Phase 5c** (your request: auto-hide like the taskbar, sliders without the knob that looked low, more translucent glass). `StateMachine` gained the *Tucked* state and `SetAutoHide`; `IslandWindow` shows it as an invisible strip at the top edge and slides the pill down/up (`IslandVisuals::SetPresent` fades it); `Slider` redrawn without a knob; settings `layout.autoHide` (true), `layout.revealWidth` (300), `glass.tintOpacity` 0.42; `TestHelpers.Touch()` + a touch test in `visual_check.ps1`. **Checked:** builds clean (Release + Debug), 178 checks, hands-free reveal/tuck timings, screenshots, 0.0 ms CPU tucked over 60 s, 32.8 MB, no crashes. **Found and fixed while testing:** after tucking, the empty window kept its old size for ~1.5 s (until the spring settled) and could have caught clicks on your browser tabs; it now drops to the strip as soon as the fade-out ends. |
 | 2026-10-24 12:59 | **Visual check of Phase 5b** (`tests\visual_check.ps1`, hands-free): idle 250×51, Peek 426×78, control center 1476×486 px; every morph ~230 ms with no jumps, and a reversal halfway turns around smoothly. Fixed the test's width probe, which stopped at 1400 px (it now scans half the screen), so the wide panel's full width and its small overshoot are measured. No Island/DWM crashes in the event log. |
 | 2026-10-24 12:55 | **Phase 5b: wide control center** (your request: wide and horizontal, Wi-Fi/Bluetooth lists, date/time/battery, per-app mixer). New: `views/sections/*` (the control center split into a header and four columns), `services/WifiService.*`, `services/BluetoothService.*`, `services/PowerService.*`; `AudioService` gained the mixer; widgets gained `ListRow`, compact side-by-side `ToggleTile`s and two-line labels; settings `panelWidth` 1180, new `panelMargin` 80, `panelRadius` 30. **Checked:** Release and Debug build with no warnings; 162 unit checks; `--hardware` 171 checks (mixer 1 % and back on Brave, Wi-Fi scan 9 networks, 7 Bluetooth devices listed; nothing switched or connected); hands-free screenshots of the panel and both lists; 32.9 MB RAM, handles steady, idle CPU ≤ 0.08 % of one core (Windows thread-pool ticks; none of Island's threads); no Island/DWM crashes in the event log. **Found and fixed while testing:** Windows takes 30 s to finish *any* Bluetooth device query on your PC (devices arrive in < 1 s, so nothing waits for the end anymore); a Wi-Fi scan asked for before the adapter was ready was dropped; the Connections column made the panel ~60 px taller than needed (tiles now side by side); long video titles were cut after one line (now two); only 4 of your 7 Bluetooth devices were reachable (lists page now, and headphones/speakers sort first); the selected tile was hard to see. Also: the test backdrop now lets clicks through. Note: your taskbar auto-hides, and Brave going fullscreen correctly hid the island several times during testing. |

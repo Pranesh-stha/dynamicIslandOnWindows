@@ -3,9 +3,11 @@
 #include <chrono>
 #include <format>
 
+#include "render/Glyphs.h"
+
 namespace wuc = winrt::Windows::UI::Composition;
 
-float StatusSection::Build(const wuc::ContainerVisual& layer, ControlHost&, float x, float y, float width)
+float StatusSection::Build(const wuc::ContainerVisual& layer, ControlHost& controls, float x, float y, float width)
 {
     m_x = x;
     m_y = y;
@@ -21,13 +23,82 @@ float StatusSection::Build(const wuc::ContainerVisual& layer, ControlHost&, floa
     {
         layer.Children().InsertAtTop(label->Visual());
     }
+
+    // Quick toggles. A muted microphone shows in red, like a call's mute button.
+    m_mic = std::make_unique<ToggleChip>(m_ui, Glyph::Mic, L"Microphone");
+    m_mic->SetOnColor({ 255, 235, 72, 64 });
+    m_mic->onClick = [this] { if (m_actions.toggleMicMute) m_actions.toggleMicMute(); };
+    m_mic->onRightClick = [this] { if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:sound"); };
+    m_nightLightChip = std::make_unique<ToggleChip>(m_ui, Glyph::NightLight, L"Night light");
+    m_nightLightChip->onClick = [this]
+    {
+        if (!m_nightLight.available)
+        {
+            if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:nightlight");
+        }
+        else if (m_actions.setNightLight)
+        {
+            m_actions.setNightLight(!m_nightLight.on);
+        }
+    };
+    m_nightLightChip->onRightClick = [this] { if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:nightlight"); };
+    m_energySaver = std::make_unique<ToggleChip>(m_ui, Glyph::EnergySaver, L"Energy saver");
+    m_energySaver->onClick = [this]
+    {
+        if (m_actions.setEnergySaver)
+        {
+            m_energySaver->SetBusy(m_running);  // until Windows reports the switch
+            m_actions.setEnergySaver(!m_power.energySaver);
+        }
+    };
+    m_energySaver->onRightClick = [this] { if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:batterysaver"); };
+    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_energySaver.get() })
+    {
+        Add(layer, controls, *chip);
+    }
+
     UpdateClock();
     ArrangeBattery();
+    ArrangeChips();
+    ApplyChips(false);
     if (m_running)
     {
         ScheduleTick();
     }
     return y + m_time->Height();
+}
+
+void StatusSection::ArrangeChips()
+{
+    // Centred on the panel, on the clock's line.
+    const float height = m_ui.EvenPx(32.0f);
+    const float gap = m_ui.Px(8.0f);
+    float total = -gap;
+    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_energySaver.get() })
+    {
+        total += chip->NaturalWidth() + gap;
+    }
+    float x = std::round(m_x + (m_width - total) / 2.0f);
+    const float y = std::round(m_y + (m_time->Height() - height) / 2.0f);
+    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_energySaver.get() })
+    {
+        chip->SetBounds(x, y, chip->NaturalWidth(), height);
+        x += chip->NaturalWidth() + gap;
+    }
+}
+
+void StatusSection::ApplyChips(bool animate)
+{
+    if (!m_mic)
+    {
+        return;
+    }
+    m_mic->SetEnabled(m_audio.micAvailable);
+    m_mic->SetGlyph(m_audio.micMuted ? Glyph::MicOff : Glyph::Mic);
+    m_mic->SetOn(m_audio.micMuted, animate);
+    m_nightLightChip->SetOn(m_nightLight.available && m_nightLight.on, animate);
+    m_energySaver->SetEnabled(m_power.energySaverAvailable);
+    m_energySaver->SetOn(m_power.energySaver, animate);
 }
 
 void StatusSection::UpdateClock()
@@ -44,13 +115,27 @@ void StatusSection::UpdateClock()
     m_date->SetPosition(m_x + m_time->Width() + m_ui.Px(12.0f), std::round(middle - m_date->Height() / 2.0f + m_ui.Px(1.0f)));
 }
 
-void StatusSection::SetPower(const PowerState& power)
+void StatusSection::SetPower(const PowerState& power, bool animate)
 {
     m_power = power;
     if (m_time)
     {
         ArrangeBattery();
+        m_energySaver->SetBusy(false);
+        ApplyChips(animate);
     }
+}
+
+void StatusSection::SetAudio(const AudioState& audio, bool animate)
+{
+    m_audio = audio;
+    ApplyChips(animate);
+}
+
+void StatusSection::SetNightLight(const NightLightState& nightLight, bool animate)
+{
+    m_nightLight = nightLight;
+    ApplyChips(animate);
 }
 
 void StatusSection::ArrangeBattery()
@@ -76,9 +161,16 @@ void StatusSection::OnVisibilityChanged(bool visible)
         UpdateClock();
         ScheduleTick();
     }
-    else if (m_tick)
+    else
     {
-        m_tick.Stop();
+        if (m_tick)
+        {
+            m_tick.Stop();
+        }
+        if (m_energySaver)
+        {
+            m_energySaver->SetBusy(false);  // nothing animates while hidden
+        }
     }
 }
 

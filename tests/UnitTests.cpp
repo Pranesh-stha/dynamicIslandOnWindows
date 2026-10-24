@@ -36,9 +36,12 @@
 #include "services/AudioService.h"
 #include "services/BluetoothService.h"
 #include "services/BrightnessService.h"
+#include "services/DisplayService.h"
+#include "services/NightLightService.h"
 #include "services/PowerService.h"
 #include "services/WifiService.h"
 #include "views/sections/ConnectionsSection.h"
+#include "views/sections/DisplaysSection.h"
 #include "views/sections/SoundSection.h"
 #include "services/MediaState.h"
 #include "services/Throttle.h"
@@ -633,6 +636,72 @@ namespace
         CHECK(PowerDescription(desktop) == L"Plugged in" && BatteryGlyph(desktop) == Glyph::Plug);
     }
 
+    void TestQuickToggles()
+    {
+        // Night light: Windows' own records from this PC (both say "on").
+        const std::vector<uint8_t> state{ 0x43, 0x42, 0x01, 0x00, 0x0A, 0x02, 0x01, 0x00, 0x2A, 0x06, 0xE2, 0x9B, 0xB3, 0xD6, 0x06,
+            0x2A, 0x2B, 0x0E, 0x15, 0x43, 0x42, 0x01, 0x00, 0x10, 0x00, 0xD0, 0x0A, 0x02, 0xC6, 0x14, 0x91, 0xD4, 0x88, 0xD8, 0xA7,
+            0xC8, 0xD6, 0xEE, 0x01, 0x00, 0x00, 0x00, 0x00 };
+        const std::vector<uint8_t> perDevice{ 0x43, 0x42, 0x01, 0x00, 0x0A, 0x02, 0x01, 0x00, 0x2A, 0x06, 0xA4, 0xA1, 0xBC, 0xD6, 0x06,
+            0x2A, 0x2B, 0x0E, 0x16, 0x43, 0x42, 0x01, 0x00, 0x10, 0x00, 0xD0, 0x0A, 0x02, 0xC6, 0x14, 0x91, 0xD4, 0x88, 0xD8, 0xA7,
+            0xC8, 0xD6, 0xEE, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00 };
+        for (const auto& record : { state, perDevice })
+        {
+            CHECK(NightLightIsOn(record) == true);
+            const auto off = NightLightWithState(record, false, 1791806946);  // the same time stamp it had
+            CHECK(off && off->size() == record.size() - 2 && (*off)[18] == record[18] - 2);
+            CHECK(off && NightLightIsOn(*off) == false);
+            const auto on = off ? NightLightWithState(*off, true, 1791806946) : std::nullopt;
+            CHECK(on && NightLightIsOn(*on) == true);
+            // Back on with the original's time stamp: byte for byte the original
+            // (the per-device one had a different stamp, so compare from the stamp on).
+            CHECK(on && on->size() == record.size() && std::equal(on->begin() + 15, on->end(), record.begin() + 15));
+            // A newer time stamp is written as a longer number when it needs more bytes.
+            const auto later = NightLightWithState(record, true, 1ull << 35);
+            CHECK(later && later->size() == record.size() + 1 && NightLightIsOn(*later) == true);
+        }
+        CHECK(state == *NightLightWithState(state, true, 1791806946));  // already on: unchanged
+        // Anything else is left alone.
+        CHECK(!NightLightIsOn({}).has_value());
+        CHECK(!NightLightIsOn({ 0x43, 0x42, 0x01, 0x00, 1, 2, 3 }).has_value());
+        std::vector<uint8_t> damaged = state;
+        damaged[16] = 0x00;
+        CHECK(!NightLightIsOn(damaged).has_value() && !NightLightWithState(damaged, false, 1).has_value());
+
+        // Energy saver: on = "always" (100 %), remembering your own levels once;
+        // off = your levels back. Anything else is Settings' job.
+        const EnergySaverLevels yours{ 0, 30 }, always{ 100, 100 };
+        auto change = PlanEnergySaver(true, yours, std::nullopt);
+        CHECK(change.write && change.levels == always && change.remember && change.previous == yours && !change.openSettings);
+        change = PlanEnergySaver(true, yours, EnergySaverLevels{ 0, 20 });  // remembered from an earlier switch: kept
+        CHECK(change.write && !change.remember);
+        change = PlanEnergySaver(false, always, yours);
+        CHECK(change.write && change.levels == yours && change.forget && !change.openSettings);
+        change = PlanEnergySaver(false, always, std::nullopt);  // you chose "always" yourself
+        CHECK(!change.write && change.openSettings);
+        change = PlanEnergySaver(false, yours, std::nullopt);  // on because the battery is low
+        CHECK(!change.write && change.openSettings);
+        change = PlanEnergySaver(true, always, std::nullopt);  // "always" and still off: a policy decides
+        CHECK(!change.write && change.openSettings);
+
+        // Projection modes, as Win+P.
+        CHECK(ProjectionFromTopology(DISPLAYCONFIG_TOPOLOGY_INTERNAL) == Projection::PcScreenOnly);
+        CHECK(ProjectionFromTopology(DISPLAYCONFIG_TOPOLOGY_CLONE) == Projection::Duplicate);
+        CHECK(ProjectionFromTopology(DISPLAYCONFIG_TOPOLOGY_EXTEND) == Projection::Extend);
+        CHECK(ProjectionFromTopology(DISPLAYCONFIG_TOPOLOGY_EXTERNAL) == Projection::SecondScreenOnly);
+        CHECK(ProjectionFromTopology(0) == Projection::Unknown);
+        CHECK(TopologyFlag(Projection::Extend) == SDC_TOPOLOGY_EXTEND && TopologyFlag(Projection::SecondScreenOnly) == SDC_TOPOLOGY_EXTERNAL);
+        CHECK(TopologyFlag(Projection::Unknown) == 0);
+        CHECK(RefreshHz(143981, 1000) == 144 && RefreshHz(165000, 1000) == 165 && RefreshHz(60, 0) == 0);
+
+        // A display's caption: its name and refresh rate, or the DDC/CI hint.
+        DisplaysState displays;
+        displays.active.push_back({ L"DISPLAY1#1", L"Legion 27Q-10", false, 2560, 1440, 144 });
+        CHECK(DisplayCaption({ L"DISPLAY1#1", L"Legion 27Q-10", false, true, true, 80 }, displays) == L"Legion 27Q-10 · 144 Hz");
+        CHECK(DisplayCaption({ L"other", L"Built-in display", true, false, true, 40 }, displays) == L"Built-in display");
+        CHECK(DisplayCaption({ L"DISPLAY1#1", L"Legion 27Q-10", false, true, false, 0 }, displays) == L"Legion 27Q-10 · turn on DDC/CI in its menu");
+    }
+
     void TestThrottle()
     {
         // Brightness writes to a slow monitor (PLAN.md E7, E9).
@@ -870,6 +939,30 @@ namespace
             bluetoothService.Start([&](const BluetoothState& state) { bluetooth = state; });
             PumpUntil([&] { return !bluetooth.paired.empty(); }, 5000);
             PumpUntil([] { return false; }, 1000);  // the audio-device lookup
+            std::printf("  power: energy saver %s%s\n", power.Current().energySaver ? "on" : "off",
+                power.Current().energySaverAvailable ? "" : " (not available)");
+
+            // Night light, microphone and projection mode: read only.
+            NightLightService nightLight;
+            nightLight.Start([](const NightLightState&) {});
+            std::printf("  night light: %s\n", !nightLight.Current().available ? "record NOT understood" : nightLight.Current().on ? "on" : "off");
+            CHECK(nightLight.Current().available);
+            AudioState mic;
+            AudioService micAudio;
+            micAudio.Start([&](const AudioState& state) { mic = state; });
+            PumpUntil([&] { return mic.available; }, 2000);
+            std::printf("  microphone: %ls%s\n", mic.micAvailable ? mic.mic.c_str() : L"none", mic.micMuted ? " (muted)" : "");
+            DisplayService displayService;
+            displayService.Start([](const DisplaysState&) {});
+            const DisplaysState& displays = displayService.Current();
+            const char* modes[] = { "unknown", "PC screen only", "duplicate", "extend", "second screen only" };
+            std::printf("  displays: %d connected, projection: %s\n", displays.connected, modes[static_cast<int>(displays.projection)]);
+            for (const DisplayInfo& display : displays.active)
+            {
+                std::printf("    %ls: %dx%d at %d Hz\n", display.name.c_str(), display.width, display.height, display.refreshHz);
+            }
+            CHECK(!displays.active.empty() && displays.projection != Projection::Unknown);
+
             std::printf("  bluetooth: %zu paired devices\n", bluetooth.paired.size());
             for (const BluetoothDevice& device : bluetooth.paired)
             {
@@ -901,6 +994,7 @@ int main(int argc, char** argv)
     TestArtworkDecode();
     TestThrottle();
     TestQuickControls();
+    TestQuickToggles();
 
     // Controls need a real compositor (no window: nothing is shown).
     const auto queue = CreateDispatcherQueue();

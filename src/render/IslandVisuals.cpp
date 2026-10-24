@@ -155,8 +155,10 @@ void IslandVisuals::SetPresent(bool present, bool animate)
     const float opacity = present ? 1.0f : 0.0f;
     if (animate)
     {
-        // Quick to appear, a little softer going away.
-        Motion::EaseTo(m_pill, L"Opacity", opacity, present ? 90 : 160);
+        // Appearing: a quick fade-in while it slides down. Going away: it
+        // stays solid while it shrinks and slides up into the top edge, and
+        // only fades at the very end (fading first looks like it just vanishes).
+        Motion::EaseTo(m_pill, L"Opacity", opacity, present ? 90 : 110, present ? 0 : 190);
     }
     else
     {

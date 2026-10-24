@@ -5,7 +5,9 @@
 #include "services/AudioService.h"
 #include "services/BluetoothService.h"
 #include "services/BrightnessService.h"
+#include "services/DisplayService.h"
 #include "services/MediaState.h"
+#include "services/NightLightService.h"
 #include "services/PowerService.h"
 #include "services/RadioService.h"
 #include "services/WifiService.h"
@@ -19,11 +21,12 @@
 
 // The full panel a click opens: a wide, horizontal layout.
 //
-//   10:42  Saturday, 24 October                       [battery] 84 %  2 h left
-//   -----------------------------------------------------------------------
-//   Now playing     |  Sound            |  Displays     |  Connections
-//   artwork, song   |  main volume      |  brightness   |  Wi-Fi / Bluetooth
-//   controls        |  apps (mixer)     |  per display  |  networks / devices
+//   10:42  Saturday, 24 October   (Mic) (Night light) (Energy saver)   [battery] 84 %  2 h left
+//   ----------------------------------------------------------------------------------
+//   Now playing     |  Sound            |  Displays        |  Connections
+//   artwork, song   |  main volume      |  brightness      |  Wi-Fi / Bluetooth
+//   controls        |  apps (mixer)     |  per display,    |  networks / devices
+//                   |                   |  Win+P modes     |
 class ControlCenter : public View
 {
 public:
@@ -39,15 +42,21 @@ public:
 
     void Build() override;
     void SetMedia(const MediaState& media) { m_nowPlaying.SetMedia(media, Visible()); }
-    void SetAudio(const AudioState& audio) { m_sound.SetAudio(audio, Visible()); }
+    void SetAudio(const AudioState& audio)
+    {
+        m_sound.SetAudio(audio, Visible());
+        m_status.SetAudio(audio, Visible());
+    }
+    void SetNightLight(const NightLightState& nightLight) { m_status.SetNightLight(nightLight, Visible()); }
     void SetRadios(const RadiosState& radios) { m_connections.SetRadios(radios, Visible()); }
     void SetWifi(const WifiState& wifi) { m_connections.SetWifi(wifi, Visible()); }
     void SetBluetooth(const BluetoothState& bluetooth) { m_connections.SetBluetooth(bluetooth, Visible()); }
-    void SetPower(const PowerState& power) { m_status.SetPower(power); }
+    void SetPower(const PowerState& power) { m_status.SetPower(power, Visible()); }
 
-    // Returns true if displays came or went: then the panel needs Build()
+    // Return true if displays came or went: then the panel needs Build()
     // again, because its height changes.
     bool SetBrightness(const BrightnessState& brightness) { return m_displays.SetBrightness(brightness, Visible()); }
+    bool SetDisplays(const DisplaysState& displays) { return m_displays.SetDisplays(displays, Visible()); }
 
 protected:
     void OnVisibilityChanged(bool visible) override;

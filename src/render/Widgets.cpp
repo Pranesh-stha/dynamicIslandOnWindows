@@ -665,6 +665,106 @@ void ToggleTile::OnClick()
     }
 }
 
+// --- ToggleChip --------------------------------------------------------------
+
+ToggleChip::ToggleChip(const Ui& ui, wchar_t glyph, std::wstring_view label)
+    : Control(ui),
+      m_icon(ui, 13.0f, DWRITE_FONT_WEIGHT_NORMAL, true),
+      m_label(ui, 12.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD)
+{
+    m_background = RoundedRect(ui, 1.0f, 1.0f, 0.0f, White(0.10f));
+    m_onLayer = RoundedRect(ui, 1.0f, 1.0f, 0.0f, ui.accent);
+    m_onLayer.visual.Opacity(0.0f);
+    m_hoverLayer = RoundedRect(ui, 1.0f, 1.0f, 0.0f, White(0.08f));
+    m_hoverLayer.visual.Opacity(0.0f);
+    m_icon.SetText(std::wstring(1, glyph));
+    m_label.SetText(label);
+    for (const wuc::Visual& visual : { wuc::Visual(m_background.visual), wuc::Visual(m_onLayer.visual), wuc::Visual(m_hoverLayer.visual),
+                                       wuc::Visual(m_icon.Visual()), wuc::Visual(m_label.Visual()) })
+    {
+        m_root.Children().InsertAtTop(visual);
+    }
+}
+
+float ToggleChip::NaturalWidth() const
+{
+    return std::round(m_ui.Px(12.0f) + m_icon.Width() + m_ui.Px(7.0f) + m_label.Width() + m_ui.Px(14.0f));
+}
+
+void ToggleChip::Layout()
+{
+    for (RoundedRect* rect : { &m_background, &m_onLayer, &m_hoverLayer })
+    {
+        rect->Resize(m_width, m_height, m_height / 2.0f);
+    }
+    const float iconX = m_ui.Px(12.0f);
+    m_icon.SetPosition(iconX, std::round((m_height - m_icon.Height()) / 2.0f));
+    m_label.SetPosition(iconX + m_icon.Width() + m_ui.Px(7.0f), std::round((m_height - m_label.Height()) / 2.0f));
+}
+
+void ToggleChip::SetOn(bool on, bool animate)
+{
+    if (on == m_on)
+    {
+        return;
+    }
+    m_on = on;
+    if (animate)
+    {
+        Motion::EaseTo(m_onLayer.visual, L"Opacity", on ? 1.0f : 0.0f, 180);
+    }
+    else
+    {
+        SetOpacityNow(m_onLayer.visual, on ? 1.0f : 0.0f);
+    }
+}
+
+void ToggleChip::SetGlyph(wchar_t glyph)
+{
+    m_icon.SetText(std::wstring(1, glyph));
+}
+
+void ToggleChip::SetOnColor(winrt::Windows::UI::Color color)
+{
+    m_onLayer.shape.FillBrush(m_ui.compositor.CreateColorBrush(color));
+}
+
+void ToggleChip::SetBusy(bool busy)
+{
+    if (busy == m_busy)
+    {
+        return;
+    }
+    m_busy = busy;
+    if (busy)
+    {
+        Motion::Pulse(m_icon.Visual(), L"Opacity", 1.0f, 0.35f, 900);
+    }
+    else
+    {
+        m_icon.Visual().StopAnimation(L"Opacity");
+        m_icon.Visual().Opacity(1.0f);
+    }
+}
+
+void ToggleChip::OnHoverChanged(bool hovered)
+{
+    Motion::EaseTo(m_hoverLayer.visual, L"Opacity", hovered ? 1.0f : 0.0f, m_ui.motion->hoverFadeMs);
+}
+
+void ToggleChip::OnPressChanged(bool pressed)
+{
+    Motion::SpringTo(m_root, L"Scale", pressed ? float3{ 0.94f, 0.94f, 1.0f } : float3{ 1.0f, 1.0f, 1.0f }, m_ui.motion->press);
+}
+
+void ToggleChip::OnClick()
+{
+    if (onClick)
+    {
+        onClick();
+    }
+}
+
 // --- ListRow -----------------------------------------------------------------
 
 ListRow::ListRow(const Ui& ui)

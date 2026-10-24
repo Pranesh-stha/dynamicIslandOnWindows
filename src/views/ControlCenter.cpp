@@ -33,9 +33,9 @@ void ControlCenter::Build()
     // Four columns sharing the width.
     const float gap = ui.Px(28.0f);
     const float available = inner - 3.0f * gap;
-    const float nowPlayingWidth = std::floor(available * 0.25f);
-    const float soundWidth = std::floor(available * 0.26f);
-    const float displaysWidth = std::floor(available * 0.16f);
+    const float nowPlayingWidth = std::floor(available * 0.24f);
+    const float soundWidth = std::floor(available * 0.25f);
+    const float displaysWidth = std::floor(available * 0.19f);
     const float connectionsWidth = available - nowPlayingWidth - soundWidth - displaysWidth;
     float x = pad;
     float bottom = y;

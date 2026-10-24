@@ -3,6 +3,8 @@
 #include <functional>
 #include <string>
 
+#include "services/DisplayService.h"
+
 // What the views can ask the rest of Island to do. App fills these in, so
 // the views never talk to services directly.
 struct IslandActions
@@ -18,9 +20,15 @@ struct IslandActions
     std::function<void()> toggleMute;
     std::function<void(const std::wstring& app, float volume)> setAppVolume;
     std::function<void(const std::wstring& app)> toggleAppMute;
+    std::function<void()> toggleMicMute;
+
+    // Quick toggles
+    std::function<void(bool on)> setNightLight;
+    std::function<void(bool on)> setEnergySaver;
 
     // Displays
     std::function<void(const std::wstring& display, float value)> setBrightness;  // 0..1
+    std::function<void(Projection projection)> setProjection;                    // like Win+P
 
     // Connections
     std::function<void(bool on)> setWifi;

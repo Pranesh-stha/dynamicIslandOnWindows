@@ -71,6 +71,14 @@ try {
     $report.Add("--- touch the top edge: the pill comes down, then tucks away (width on row $row)")
     $report.Add([Visual]::Timeline($row, 1300))
 
+    # Closing the control center with auto-hide: it should visibly shrink
+    # and slide up into the top edge, not just fade out where it is.
+    [Visual]::Pose(3)
+    Start-Sleep -Milliseconds 900
+    [Visual]::Pose(0)
+    $report.Add("--- control center closing into the top edge (width on row $row; starts after the 500 ms leave delay)")
+    $report.Add([Visual]::Timeline($row, 1400))
+
     [Visual]::Pose(4)
     Start-Sleep -Milliseconds 1200
     [Visual]::Shot((Join-Path $Out "5-demo.png"), 900, 600)

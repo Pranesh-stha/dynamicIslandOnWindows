@@ -42,5 +42,12 @@ namespace Glyph
     constexpr wchar_t Back = 0xE72B;
     constexpr wchar_t ChevronRight = 0xE76C;
     constexpr wchar_t More = 0xE712;
+    constexpr wchar_t Mic = 0xE720;
+    constexpr wchar_t MicOff = 0xF781;
+    constexpr wchar_t NightLight = 0xE708;    // a crescent moon
+    constexpr wchar_t EnergySaver = 0xE8BE;   // a leaf
+    constexpr wchar_t Duplicate = 0xE8C8;     // two overlapping squares
+    constexpr wchar_t Extend = 0xEBC6;        // two screens side by side
+    constexpr wchar_t Monitor = 0xE7F4;
     constexpr wchar_t Settings = 0xE713;
 }

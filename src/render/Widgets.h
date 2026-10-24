@@ -271,6 +271,37 @@ private:
     bool m_busy = false;
 };
 
+// A small pill with an icon and a word, on or off: the quick toggles at the
+// top of the control center (microphone, night light, energy saver). On, it
+// fills with a colour (the accent, unless SetOnColor says otherwise).
+class ToggleChip : public Control
+{
+public:
+    ToggleChip(const Ui& ui, wchar_t glyph, std::wstring_view label);
+
+    void SetOn(bool on, bool animate);
+    bool IsOn() const { return m_on; }
+    void SetGlyph(wchar_t glyph);
+    void SetOnColor(winrt::Windows::UI::Color color);
+    void SetBusy(bool busy);   // a gentle pulse while Windows is switching
+    float NaturalWidth() const;  // just fits the icon and the word
+
+    std::function<void()> onClick;
+
+    void OnHoverChanged(bool hovered) override;
+    void OnPressChanged(bool pressed) override;
+    void OnClick() override;
+
+protected:
+    void Layout() override;
+
+private:
+    RoundedRect m_background, m_onLayer, m_hoverLayer;
+    Label m_icon, m_label;
+    bool m_on = false;
+    bool m_busy = false;
+};
+
 // One line of a list (a Wi-Fi network, a Bluetooth device, "Add a
 // device"): an icon in a circle (accent coloured when active, e.g.
 // connected), a title, a detail line and an optional small icon at the end.

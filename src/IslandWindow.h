@@ -18,6 +18,8 @@
 #include "render/Widgets.h"
 #include "services/AudioService.h"
 #include "services/BluetoothService.h"
+#include "services/DisplayService.h"
+#include "services/NightLightService.h"
 #include "services/PowerService.h"
 #include "services/WifiService.h"
 #include "services/BrightnessService.h"
@@ -79,6 +81,8 @@ public:
     void SetWifi(const WifiState& wifi);
     void SetBluetooth(const BluetoothState& bluetooth);
     void SetPower(const PowerState& power);
+    void SetNightLight(const NightLightState& nightLight);
+    void SetDisplays(const DisplaysState& displays);
 
     // Opens the panel with one of every control (tray menu).
     void OpenControlKitDemo();
@@ -123,6 +127,7 @@ private:
     void ShowNow();
     void PushMedia();
     void PushQuickControls();
+    void RebuildControlCenter();
     Motion::float2 ToLayer(POINT point, const View& view) const;
 
     HWND m_hwnd{};
@@ -152,6 +157,8 @@ private:
     WifiState m_wifi;
     BluetoothState m_bluetooth;
     PowerState m_power;
+    NightLightState m_nightLight;
+    DisplaysState m_displays;
     std::function<void(IslandState)> m_onStateChanged;
     std::function<void()> m_onDisplaysChanged;
 

@@ -32,7 +32,7 @@ namespace
     // the window drops to the thin strip at once, so the empty window can't
     // catch clicks meant for what's under it (e.g. browser tabs).
     constexpr UINT_PTR kTuckTimer = 5;
-    constexpr UINT kTuckShrinkMs = 180;
+    constexpr UINT kTuckShrinkMs = 310;
 
     // When the panel is opened from the tray, the mouse isn't on it; give
     // you time to get there before it closes again.
@@ -292,19 +292,38 @@ void IslandWindow::SetRadios(const RadiosState& radios)
 void IslandWindow::SetBrightness(const BrightnessState& brightness)
 {
     m_brightness = brightness;
-    if (State() == IslandState::Hidden)
+    if (State() != IslandState::Hidden && m_controlCenter->SetBrightness(brightness))
     {
-        return;
+        RebuildControlCenter();
     }
-    if (m_controlCenter->SetBrightness(brightness))
+}
+
+void IslandWindow::SetDisplays(const DisplaysState& displays)
+{
+    m_displays = displays;
+    if (State() != IslandState::Hidden && m_controlCenter->SetDisplays(displays))
     {
-        // A display came or went: one slider more or less, so the panel's
-        // height changes. Rebuild it, and morph to the new height if it's open.
-        m_controlCenter->Build();
-        if (State() == IslandState::Expanded && ExpandedView() == m_controlCenter.get())
-        {
-            ShowState(true);
-        }
+        RebuildControlCenter();
+    }
+}
+
+void IslandWindow::RebuildControlCenter()
+{
+    // A display came or went: a row more or less, so the panel's height
+    // changes. Rebuild it, and morph to the new height if it's open.
+    m_controlCenter->Build();
+    if (State() == IslandState::Expanded && ExpandedView() == m_controlCenter.get())
+    {
+        ShowState(true);
+    }
+}
+
+void IslandWindow::SetNightLight(const NightLightState& nightLight)
+{
+    m_nightLight = nightLight;
+    if (State() != IslandState::Hidden)
+    {
+        m_controlCenter->SetNightLight(nightLight);
     }
 }
 
@@ -339,6 +358,8 @@ void IslandWindow::PushQuickControls()
 {
     m_controlCenter->SetAudio(m_audio);
     SetBrightness(m_brightness);
+    SetDisplays(m_displays);
+    m_controlCenter->SetNightLight(m_nightLight);
     m_controlCenter->SetRadios(m_radios);
     m_controlCenter->SetWifi(m_wifi);
     m_controlCenter->SetBluetooth(m_bluetooth);
@@ -482,8 +503,9 @@ IslandShape IslandWindow::ShapeFor(IslandState state) const
         return { view->Width(), view->Height(), top, m_ui.Px(m_layout.panelRadius) };
     }
     case IslandState::Tucked:
-        // The pill, just above the top edge: it slides down when revealed.
-        return { m_idleView->Width(), m_idleView->Height(), -m_idleView->Height(), m_idleView->Height() / 2.0f };
+        // The pill, just above the top edge (with room for the spring's
+        // overshoot): it slides down when revealed, and back up to tuck away.
+        return { m_idleView->Width(), m_idleView->Height(), -m_idleView->Height() - m_ui.Px(8.0f), m_idleView->Height() / 2.0f };
     default:
         if (SlimLine())
         {

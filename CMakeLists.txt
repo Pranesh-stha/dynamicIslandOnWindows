@@ -64,6 +64,8 @@ add_library(IslandCore STATIC
     src/services/FullscreenWatcher.cpp
     src/services/MediaService.cpp
     src/services/MediaState.cpp
+    src/services/DisplayService.cpp
+    src/services/NightLightService.cpp
     src/services/PowerService.cpp
     src/services/RadioService.cpp
     src/services/WifiService.cpp
@@ -77,6 +79,7 @@ target_link_libraries(IslandCore PUBLIC
     shcore          # GetDpiForMonitor
     d3d11 dxgi      # the GPU device that draws text and images
     d2d1 dwrite     # Direct2D (drawing) and DirectWrite (text)
+    powrprof        # energy saver: the active power plan's settings
     dxguid          # IDs of the Direct2D effects the glass uses
     windowscodecs   # WIC: decoding album artwork
     dxva2           # DDC/CI: external monitor brightness

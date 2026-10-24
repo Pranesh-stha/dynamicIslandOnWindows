@@ -32,6 +32,10 @@ struct AudioState
     bool muted = false;
     std::wstring device;     // "Speakers", "Headphones", ...
     std::vector<AppVolume> apps;  // playing apps first, Windows' sounds last
+
+    bool micAvailable = false;  // there is a microphone
+    bool micMuted = false;      // the default microphone is muted
+    std::wstring mic;           // its name
 };
 
 // One audio session (an app's stream) as the mixer sees it.
@@ -53,11 +57,11 @@ std::vector<AppVolume> GroupSessions(const std::vector<SessionInfo>& sessions);
 // "chrome.exe" -> "Chrome", "VALORANT-Win64-Shipping.exe" -> "VALORANT".
 std::wstring FriendlyExeName(std::wstring_view exe);
 
-// The system volume of the default output device and the per-app mixer
-// (Windows' Core Audio). Changes made anywhere (volume keys, Quick
-// Settings, Windows' mixer) arrive as events, and it follows the default
-// device when you plug in headphones (PLAN.md E6). Results are delivered on
-// the UI thread.
+// The system volume of the default output device, the per-app mixer and
+// the microphone's mute (Windows' Core Audio). Changes made anywhere (volume
+// keys, Quick Settings, Windows' mixer) arrive as events, and it follows the
+// default devices when you plug in headphones (PLAN.md E6). Results are
+// delivered on the UI thread.
 class AudioService
 {
 public:
@@ -71,6 +75,8 @@ public:
     void ToggleMute();
     void SetAppVolume(const std::wstring& key, float volume);
     void ToggleAppMute(const std::wstring& key);
+    // Mutes or unmutes every microphone, so no app can still listen through another one.
+    void ToggleMicMute();
     const AudioState& Current() const { return m_state; }
 
 private:
@@ -84,6 +90,7 @@ private:
 
     void Bind();
     void Unbind();
+    void BindMic();
     void AddSession(IAudioSessionControl* control);
     void OnSessionChanged(IAudioSessionControl2* control);
     void UpdateApps();
@@ -95,6 +102,8 @@ private:
     winrt::com_ptr<IMMDeviceEnumerator> m_devices;
     winrt::com_ptr<IAudioEndpointVolume> m_endpoint;
     winrt::com_ptr<IAudioEndpointVolumeCallback> m_volumeEvents;
+    winrt::com_ptr<IAudioEndpointVolume> m_mic;
+    winrt::com_ptr<IAudioEndpointVolumeCallback> m_micEvents;
     winrt::com_ptr<IMMNotificationClient> m_deviceEvents;
     winrt::com_ptr<IAudioSessionManager2> m_sessionManager;
     winrt::com_ptr<IAudioSessionNotification> m_sessionCreated;
