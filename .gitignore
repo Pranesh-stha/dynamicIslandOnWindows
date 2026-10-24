@@ -11,3 +11,4 @@ CMakeUserPresets.json
 *.pdb
 *.ilk
 *.dmp
+PLAN.md
