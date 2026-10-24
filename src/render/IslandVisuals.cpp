@@ -150,6 +150,21 @@ void IslandVisuals::ApplyGlass(const GlassSettings& glass, bool effectsEnabled, 
     m_rimShape.StrokeThickness(2.0f * std::max(1.0f, std::round(scale)));
 }
 
+void IslandVisuals::SetPresent(bool present, bool animate)
+{
+    const float opacity = present ? 1.0f : 0.0f;
+    if (animate)
+    {
+        // Quick to appear, a little softer going away.
+        Motion::EaseTo(m_pill, L"Opacity", opacity, present ? 90 : 160);
+    }
+    else
+    {
+        m_pill.StopAnimation(L"Opacity");
+        m_pill.Opacity(opacity);
+    }
+}
+
 void IslandVisuals::MorphTo(const IslandShape& shape, const Spring& spring, bool animate, std::function<void()> onSettled)
 {
     const uint64_t generation = ++m_generation;

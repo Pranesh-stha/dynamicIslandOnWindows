@@ -371,15 +371,14 @@ protected:
 private:
     float ValueAt(float x) const;
     void Show(float value, bool animate);
-    void UpdateThumb();
+    void UpdateLook();
 
     winrt::Windows::UI::Composition::CompositionPropertySet m_properties{ nullptr };
     winrt::Windows::UI::Composition::ContainerVisual m_track{ nullptr };
     winrt::Windows::UI::Composition::CompositionRoundedRectangleGeometry m_trackShape{ nullptr };
     winrt::Windows::UI::Composition::SpriteVisual m_trackBackground{ nullptr };
     winrt::Windows::UI::Composition::SpriteVisual m_fill{ nullptr };
-    winrt::Windows::UI::Composition::ShapeVisual m_thumb{ nullptr };
-    float m_thumbSize, m_thin, m_thick;
+    float m_thin, m_thick;
     float m_value = 0.0f;
     bool m_dragging = false;
     bool m_hovered = false;

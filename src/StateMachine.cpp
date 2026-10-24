@@ -4,7 +4,15 @@ void StateMachine::PointerEntered()
 {
     m_pointerInside = true;
     m_host.StopTimer(IslandTimer::Leave);
-    if (m_state == IslandState::Idle && !m_windowDrag && !m_ignoreHoverUntilLeave)
+    if (m_windowDrag || m_ignoreHoverUntilLeave)
+    {
+        return;  // a window being dragged to the top (Snap Layouts) must not bring it out
+    }
+    if (m_state == IslandState::Tucked)
+    {
+        GoTo(IslandState::Idle);  // the mouse reached the top edge: the pill comes down
+    }
+    if (m_state == IslandState::Idle)
     {
         m_host.StartTimer(IslandTimer::HoverIntent, m_timing.hoverIntentMs);
     }
@@ -33,7 +41,7 @@ void StateMachine::PointerCaptured(bool captured)
 
 void StateMachine::BackgroundClicked()
 {
-    if (m_state == IslandState::Idle || m_state == IslandState::Peek)
+    if (m_state == IslandState::Tucked || m_state == IslandState::Idle || m_state == IslandState::Peek)
     {
         m_host.StopTimer(IslandTimer::HoverIntent);
         GoTo(IslandState::Expanded);
@@ -71,7 +79,7 @@ void StateMachine::FullscreenChanged(bool fullscreen, bool immediately)
         if (immediately || m_timing.showDelayMs == 0)
         {
             m_host.StopTimer(IslandTimer::Show);
-            GoTo(IslandState::Idle);
+            GoTo(Resting());
         }
         else
         {
@@ -90,6 +98,23 @@ void StateMachine::OpenExpanded(int leaveDelayMs)
     if (!m_pointerInside && !m_pinned)
     {
         m_host.StartTimer(IslandTimer::Leave, leaveDelayMs);
+    }
+}
+
+void StateMachine::SetAutoHide(bool autoHide)
+{
+    if (autoHide == m_autoHide)
+    {
+        return;
+    }
+    m_autoHide = autoHide;
+    if (!autoHide && m_state == IslandState::Tucked)
+    {
+        GoTo(IslandState::Idle);
+    }
+    else if (autoHide && m_state == IslandState::Idle && !m_pointerInside && !m_pinned)
+    {
+        GoTo(IslandState::Tucked);
     }
 }
 
@@ -130,16 +155,20 @@ void StateMachine::TimerElapsed(IslandTimer timer)
         break;
 
     case IslandTimer::Leave:
-        if ((m_state == IslandState::Peek || m_state == IslandState::Expanded) && !m_pointerInside && !m_captured && !m_pinned)
+    {
+        const bool open = m_state == IslandState::Peek || m_state == IslandState::Expanded ||
+                          (m_state == IslandState::Idle && m_autoHide);
+        if (open && !m_pointerInside && !m_captured && !m_pinned)
         {
-            GoTo(IslandState::Idle);
+            GoTo(Resting());
         }
         break;
+    }
 
     case IslandTimer::Show:
         if (m_state == IslandState::Hidden && !m_fullscreen)
         {
-            GoTo(IslandState::Idle);
+            GoTo(Resting());
         }
         break;
     }
@@ -147,7 +176,7 @@ void StateMachine::TimerElapsed(IslandTimer timer)
 
 void StateMachine::StartLeaveTimer()
 {
-    if (m_state == IslandState::Peek || m_state == IslandState::Expanded)
+    if (m_state == IslandState::Peek || m_state == IslandState::Expanded || (m_state == IslandState::Idle && m_autoHide))
     {
         m_host.StartTimer(IslandTimer::Leave,
             m_state == IslandState::Expanded ? m_timing.expandedLeaveDelayMs : m_timing.leaveDelayMs);
@@ -162,7 +191,7 @@ void StateMachine::GoTo(IslandState state)
     }
     const IslandState from = m_state;
     m_state = state;
-    if (state == IslandState::Idle || state == IslandState::Hidden)
+    if (state == IslandState::Tucked || state == IslandState::Hidden || (state == IslandState::Idle && !m_autoHide))
     {
         m_host.StopTimer(IslandTimer::Leave);
     }

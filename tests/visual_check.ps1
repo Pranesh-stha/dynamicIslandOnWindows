@@ -60,6 +60,17 @@ try {
     Start-Sleep -Milliseconds 120
     Morph "interrupted: expand, back to idle after 120 ms" 1 $row 1100
 
+    # Auto-hide: released from its pose, the island tucks away (an invisible
+    # strip along the top edge). Touching the strip brings the pill down;
+    # the mouse "leaving" right after tucks it away again.
+    [Visual]::Pose(0)
+    Start-Sleep -Milliseconds 900
+    $r = [Visual]::IslandRect(); $report.Add("tucked window: $($r.Right - $r.Left) x $($r.Bottom - $r.Top) px (an invisible strip; 2-3 px when auto-hide is on)")
+    [Visual]::Shot((Join-Path $Out "6-tucked.png"), 700, 110)
+    [Visual]::Touch()
+    $report.Add("--- touch the top edge: the pill comes down, then tucks away (width on row $row)")
+    $report.Add([Visual]::Timeline($row, 1300))
+
     [Visual]::Pose(4)
     Start-Sleep -Milliseconds 1200
     [Visual]::Shot((Join-Path $Out "5-demo.png"), 900, 600)

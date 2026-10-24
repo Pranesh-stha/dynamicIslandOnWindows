@@ -4,10 +4,10 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 
 ## 0. Current status (read this first)
 
-- **Current phase:** Phases 2–5 and **5b (the wide control center you asked for)** are built and verified. The island hides for games, morphs on glass and shows now playing. Its control center is now wide and short: time/date/battery, now playing, volume + a per-app mixer, brightness for both displays, and Wi-Fi/Bluetooth with lists to switch networks and connect, disconnect or pair devices. **Next: Phase 6, "Displays."**
-- Hands-on checks are left for you in the Phase 1–5b lists (real games and PresentMon, how the motion *feels*, dragging the sliders, toggling Wi-Fi/Bluetooth, joining a network, connecting headphones). It doesn't start at login yet (Phase 7).
+- **Current phase:** Phases 2–5, **5b (the wide control center)** and **5c (auto-hide, knob-less sliders, lighter glass)** are built and verified. The island hides for games and now also stays **out of sight until you push the mouse to the top-middle of the screen** (like your auto-hide taskbar); then it slides down as the pill, opens Peek on hover and the control center on click. The control center is wide: time/date/battery, now playing, volume + per-app mixer, brightness, Wi-Fi/Bluetooth lists. **Next: Phase 6, "Displays."**
+- Hands-on checks are left for you in the Phase 1–5c lists (real games and PresentMon, how the motion and the auto-hide *feel*, dragging the sliders, toggling Wi-Fi/Bluetooth, joining a network, connecting headphones). It doesn't start at login yet (Phase 7).
 - ⚠ Two crashes were found and fixed on 2026-10-24 (§12): an Island crash on an empty media object, and **DWM (the Windows compositor) crashing** when a rebuilt panel released objects with springs still running. None since.
-- **Last updated:** 2026-10-24 12:59 NPT (UTC+05:45)
+- **Last updated:** 2026-10-24 13:19 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
@@ -111,11 +111,16 @@ Why this one:
  Hidden  ◄──── game / fullscreen app detected ────  (from any state)
    │ fullscreen gone (after a short settle delay)
    ▼
+ Tucked: out of sight (auto-hide, like your taskbar)
+   │ mouse touches the top edge, middle        ▲ mouse leaves ~300 ms
+   ▼                                           │ (from Idle, Peek or Expanded)
  Idle: small pill ── hover ~150 ms ──►  Peek: wider, song + play/pause
-   ▲                                       │ click
-   │ mouse leaves ~300 ms                  ▼
-   └───────────────────────────────  Expanded: control center
+                                           │ click
+                                           ▼
+                                     Expanded: control center
 ```
+
+**Auto-hide (decided 2026-10-24, your request):** like an auto-hide taskbar, nothing shows until the mouse touches the very top edge of the screen in the middle (a 300 DIP wide spot, `layout.revealWidth`). Then the pill slides down from the edge, and the rest works as before: rest on it → Peek, click → control center. When the mouse leaves, it slides back up out of sight. Tucked away, the window is an invisible 2 px strip along the top edge; it costs nothing (no drawing, 0 CPU). `"autoHide": false` in settings.json brings back the always-visible pill (and the slim line over maximized windows).
 
 **Where it lives (decided):** on whichever monitor Windows currently calls *primary*. It moves automatically when that changes:
 
@@ -126,7 +131,7 @@ There is no setting to change; it just follows the primary monitor. With a colle
 
 **Idle look (decided):** a frosted glass pill.
 
-**Over maximized windows (decided):** when the window in front is maximized on the island's monitor, the pill shrinks to a slim glass line (about 4 px) so it doesn't cover tabs or title bars. The line touches the very top edge of the screen. Because the cursor stops at that edge, the line is easy to hit even though it's thin. Hovering still opens it.
+**Over maximized windows (decided; only with auto-hide off):** when the window in front is maximized on the island's monitor, the pill shrinks to a slim glass line (about 4 px) so it doesn't cover tabs or title bars. With auto-hide on (the default since 2026-10-24) the island is out of sight anyway, and the pill comes down only while the mouse is on it. The line touches the very top edge of the screen. Because the cursor stops at that edge, the line is easy to hit even though it's thin. Hovering still opens it.
 
 **Expanded panel (decided 2026-10-24: wide and short).** Idle and Peek stay small. The control center opens *wide*: up to 1180 DIP, always leaving at least 80 DIP of screen on each side (`layout.panelWidth` / `panelMargin`).
 
@@ -179,7 +184,7 @@ General rules:
 | Play / Pause | Same as an icon button | The icon *morphs* play ↔ pause (crossfade with a slight scale/rotate) instead of swapping |
 | Toggle switch (Wi-Fi, Bluetooth) | Track lightens slightly | Knob slides with a soft spring and the track color crossfades. The knob stretches a little while held (iOS style) |
 | Radio / segmented choice (e.g. Extend / Duplicate) | Option highlight fades in | The selection pill *slides* to the new option |
-| Slider (volume, brightness) | Thumb grows; track thickens | While dragging, it follows the cursor 1:1 with no delay, because animating here would feel laggy. Clicking a spot on the track glides there with a spring, and changes from keyboard keys glide too |
+| Slider (volume, brightness) | The bar grows a little (8 → 10 DIP) and its fill brightens. **No knob** (changed 2026-10-24, your request): a thick rounded bar whose filled part is the level | While dragging, it follows the cursor 1:1 with no delay, because animating here would feel laggy. Clicking a spot on the bar glides there with a spring, and changes from keyboard keys glide too |
 
 **Window strategy (for both smoothness and clicks):**
 
@@ -202,7 +207,7 @@ windowsUI/
     app.manifest             DPI awareness (Per-Monitor V2), Windows 10/11
     AppMessages.h            "Island.Quit" message shared between Island processes
     IslandWindow.*           the window: flags, placement, DPI, hit-testing, hide/show
-    StateMachine.*           Hidden / Idle / Peek / Expanded rules (unit-tested, no window)
+    StateMachine.*           Hidden / Tucked / Idle / Peek / Expanded rules (unit-tested, no window)
     render/
       IslandVisuals.*        visual tree, glass material, the morph
       Graphics.*             Direct2D/DirectWrite on the low-power GPU: text, icons, images
@@ -342,6 +347,16 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
   - ✅ RAM 32.9 MB (Task Manager "Memory"); handles steady (547 → 547 over 30 s). Idle CPU: 0–94 ms per 2 minutes (one 15.6 ms scheduler tick at a time, ≤ 0.08 % of one core; Task Manager shows 0 %), on a Windows thread-pool thread. None of Island's own threads run, and no service reports anything while idle. Phase 5 measured a flat 0.0; the difference is Windows-side (to recheck in the Phase 7 soak).
   - ⬜ (you) Join another Wi-Fi network, connect/disconnect your Galaxy Buds or AirPods, pair something new, drag an app's slider in the mixer while it plays. I didn't, because it would have cut your connection or your audio.
 
+### Phase 5c: Auto-hide, knob-less sliders, lighter glass ✅ built (2026-10-24, your request)
+- ✅ **Auto-hide** (§5): new state *Tucked* in `StateMachine`; the window is an invisible 2 px × 300 DIP strip at the top edge; touching it slides the pill down; leaving slides it back up (300 ms delay). Hidden ↔ Tucked for fullscreen apps works as before.
+- ✅ **Sliders:** no knob; 8 DIP bar (10 DIP when hovered or held) whose filled part is the level; even pixel sizes so the bar sits centred on whole pixels at 125 % and 175 %.
+- ✅ **Glass:** tint 0.55 → 0.42.
+- **Done when:**
+  - ✅ Release and Debug build with no warnings; 178 unit checks (new: the auto-hide rules: reveal on touch, Peek after resting, straight back to tucked from Peek/the control center, tucked again after leaving the pill, no reveal while dragging a window, fullscreen → hidden → tucked, switching the setting live, poses).
+  - ✅ Hands-free (`visual_check.ps1`, which now also "touches" the strip with a posted mouse message, never your mouse): tucked = 376×2 px strip, nothing visible; touch → pill visible after ~90 ms; mouse gone → tucked 307 ms later, window back to the strip ~190 ms after that. Screenshots of the new sliders and the lighter glass.
+  - ✅ Tucked: 0.0 ms CPU over 60 s, 32.8 MB RAM; no crashes in the event log.
+  - ⬜ (you) Does pushing the mouse to the top-middle feel right? Is 300 DIP wide enough or too wide (`layout.revealWidth`)? Is the glass light enough (`glass.tintOpacity`, lower = clearer)? `tests\fullscreen_test.ps1` wasn't re-run (it moves your mouse; the fullscreen rules didn't change, and the unit tests cover hidden ↔ tucked).
+
 ### Phase 6: Displays
 - List connected monitors by friendly name.
 - Clicking one opens `ms-settings:display`.
@@ -425,6 +440,8 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
 | B6 | Shows up in Alt+Tab or the taskbar | Wrong window style | `WS_EX_TOOLWINDOW` |
 | B7 | Tray icon vanishes or island gets stuck after Explorer restarts | Shell state is lost | Handle the `TaskbarCreated` message |
 | B8 | Missing on other virtual desktops | Virtual desktop rules | Test; add handling if needed |
+| B9 | With auto-hide, a click at the very top of the screen in the middle (e.g. on a maximized browser's tab) brings out the island instead | The invisible strip owns the top 2 px there, like an auto-hide taskbar's strip at the bottom | Only 2 px tall and 300 DIP wide (`revealWidth`); after tucking away, the window drops back to the strip 180 ms later (once faded out), not when the spring settles (~1.5 s) |
+| B10 | Auto-hide never reveals the island | A monitor placed *above* the primary one: the mouse doesn't stop at the top edge, it passes onto the other screen | Not an issue for your setup (side by side); `"autoHide": false` as the fallback |
 
 ### C. Displays, DPI, GPU
 | # | What could go wrong | Why | Prevention |
@@ -548,6 +565,10 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-24 | Tiles side by side, macOS-style: the round icon toggles the radio, the rest of the tile picks the list below |
 | 2026-10-24 | Mixer shows up to 4 apps (playing first, "System sounds" last); app names come from the session or the exe file name (Toolhelp snapshot, never a process handle) |
 | 2026-10-24 | The test backdrop is click-through (layered + transparent), so a stray click during a hands-free test reaches your window |
+| 2026-10-24 | **Auto-hide is the default** (your request): the island rests out of sight (new state *Tucked*) until the mouse touches the top edge in the middle, then behaves as before. Replaces the always-visible pill and the slim line; `layout.autoHide: false` restores them. No global mouse hook: the island's own invisible 2 px window at the edge receives the mouse |
+| 2026-10-24 | Revealing pill slides down from above the top edge and fades in (90 ms); tucking slides up and fades out (160 ms) |
+| 2026-10-24 | Sliders have no knob: a thick rounded bar (8 DIP, 10 DIP when hovered or held), the filled part is the level (your request) |
+| 2026-10-24 | Lighter glass: tint 0.55 → 0.42 (your request: "a bit more translucent"); still tunable live with `glass.tintOpacity` |
 
 ## 12. Update log
 
@@ -555,6 +576,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 13:19 | **Phase 5c** (your request: auto-hide like the taskbar, sliders without the knob that looked low, more translucent glass). `StateMachine` gained the *Tucked* state and `SetAutoHide`; `IslandWindow` shows it as an invisible strip at the top edge and slides the pill down/up (`IslandVisuals::SetPresent` fades it); `Slider` redrawn without a knob; settings `layout.autoHide` (true), `layout.revealWidth` (300), `glass.tintOpacity` 0.42; `TestHelpers.Touch()` + a touch test in `visual_check.ps1`. **Checked:** builds clean (Release + Debug), 178 checks, hands-free reveal/tuck timings, screenshots, 0.0 ms CPU tucked over 60 s, 32.8 MB, no crashes. **Found and fixed while testing:** after tucking, the empty window kept its old size for ~1.5 s (until the spring settled) and could have caught clicks on your browser tabs; it now drops to the strip as soon as the fade-out ends. |
 | 2026-10-24 12:59 | **Visual check of Phase 5b** (`tests\visual_check.ps1`, hands-free): idle 250×51, Peek 426×78, control center 1476×486 px; every morph ~230 ms with no jumps, and a reversal halfway turns around smoothly. Fixed the test's width probe, which stopped at 1400 px (it now scans half the screen), so the wide panel's full width and its small overshoot are measured. No Island/DWM crashes in the event log. |
 | 2026-10-24 12:55 | **Phase 5b: wide control center** (your request: wide and horizontal, Wi-Fi/Bluetooth lists, date/time/battery, per-app mixer). New: `views/sections/*` (the control center split into a header and four columns), `services/WifiService.*`, `services/BluetoothService.*`, `services/PowerService.*`; `AudioService` gained the mixer; widgets gained `ListRow`, compact side-by-side `ToggleTile`s and two-line labels; settings `panelWidth` 1180, new `panelMargin` 80, `panelRadius` 30. **Checked:** Release and Debug build with no warnings; 162 unit checks; `--hardware` 171 checks (mixer 1 % and back on Brave, Wi-Fi scan 9 networks, 7 Bluetooth devices listed; nothing switched or connected); hands-free screenshots of the panel and both lists; 32.9 MB RAM, handles steady, idle CPU ≤ 0.08 % of one core (Windows thread-pool ticks; none of Island's threads); no Island/DWM crashes in the event log. **Found and fixed while testing:** Windows takes 30 s to finish *any* Bluetooth device query on your PC (devices arrive in < 1 s, so nothing waits for the end anymore); a Wi-Fi scan asked for before the adapter was ready was dropped; the Connections column made the panel ~60 px taller than needed (tiles now side by side); long video titles were cut after one line (now two); only 4 of your 7 Bluetooth devices were reachable (lists page now, and headphones/speakers sort first); the selected tile was hard to see. Also: the test backdrop now lets clicks through. Note: your taskbar auto-hides, and Brave going fullscreen correctly hid the island several times during testing. |
 | 2026-10-24 08:35 | **Phase 5 built.** New: `services/AudioService.*`, `services/BrightnessService.*`, `services/RadioService.*`, `services/Throttle.h`; the control center gained volume, brightness per display and the Wi-Fi/Bluetooth tiles; right-click opens Settings pages; `IslandTests --hardware`. **Checked:** Release and Debug build with no warnings; 135 checks pass (incl. 1 %-and-back hardware checks on both displays and the volume); the hands-free visual and media tests pass; 33.7 MB RAM, 0.0 ms idle CPU over 30 s. **Two crashes found in Windows' event log and fixed.** (1) `Island.exe` access violation on 08:04 (during a Phase 4 media test): I rebuilt that exact version, mapped the crash dump's address with a linker map → `MediaService::ReadPlayback` calling into an *empty* object Windows returned while the test player's session started. Every media/network object is now null-checked (E12). (2) **`dwm.exe` crashed 5 times (08:15–08:20)** when the Phase 5 build started: with Microsoft's public symbols the crash is in DWM's spring code (`CNaturalAnimation::SampleInitialValueAndFinalValueIfNecessary`). Cause: the control center was rebuilt right after its hidden sliders/toggles had started springs. Fix: hidden content never animates; replaced layers are released 3 s later (D11). After the fix: 5 launches + all test runs, 0 crashes. Also: Wi-Fi said "Not connected" when Windows hides the name (now "Connected"); a browser replacing its media session no longer makes the island jump to another app. |

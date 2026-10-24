@@ -17,6 +17,11 @@
 
   // Sizes in DIPs: 1 DIP = 1 pixel at 100 % display scale, 1.25 px at 125 %.
   "layout": {
+    // Like an auto-hide taskbar: the island stays out of sight until the
+    // mouse touches the top edge of the screen in the middle. false = the
+    // pill always shows (a slim line over maximized windows).
+    "autoHide": true,
+    "revealWidth": 300,    // how wide that spot at the top edge is
     "idleWidth": 200,      // the resting pill
     "idleHeight": 34,
     "topGap": 6,           // space between the top of the screen and the island
@@ -30,7 +35,7 @@
   },
 
   "glass": {
-    "tintOpacity": 0.55,   // dark tint over the blur: 0 = clear, 1 = solid
+    "tintOpacity": 0.42,   // dark tint over the blur: 0 = clear, 1 = solid
     "saturation": 1.6,     // colour boost of what's behind (1 = unchanged)
     "brightness": 1.0,     // brightness of what's behind (1 = unchanged)
     "noiseOpacity": 0.035, // faint grain that hides banding in the blur

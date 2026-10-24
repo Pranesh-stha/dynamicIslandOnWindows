@@ -104,6 +104,16 @@ public static class Visual
         PostMessage(FindWindow("Island.Pill", null), RegisterWindowMessage("Island.Pose"), new IntPtr(pose), IntPtr.Zero);
     }
 
+    // As if the mouse touched the island at the top edge, without moving
+    // your mouse: a mouse-move message posted to the island's window. Windows
+    // then reports the mouse leaving at once, since the real pointer isn't there.
+    public static void Touch()
+    {
+        RECT r = IslandRect();
+        int x = (r.Right - r.Left) / 2;
+        PostMessage(FindWindow("Island.Pill", null), 0x0200, IntPtr.Zero, new IntPtr(x & 0xFFFF));  // WM_MOUSEMOVE at (x, 0)
+    }
+
     public static RECT IslandRect()
     {
         RECT r; GetWindowRect(FindWindow("Island.Pill", null), out r); return r;

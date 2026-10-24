@@ -116,8 +116,10 @@ private:
     View* ExpandedView() const;
     View* InteractiveView() const;
     IslandShape ShapeFor(IslandState state) const;
+    bool SlimLine() const;  // idle shows the slim line (a maximized window is under it)
     void ShowState(bool animate);
     void ResizeWindow(float width, float height);
+    Motion::float2 StripSize() const;  // the window while tucked away
     void ShowNow();
     void PushMedia();
     void PushQuickControls();

@@ -16,6 +16,8 @@
 // 1.25 pixels at 125 %, and so on).
 struct LayoutSettings
 {
+    bool autoHide = true;       // out of sight until the mouse touches the top edge (like an auto-hide taskbar)
+    float revealWidth = 300.0f; // ...in the middle this wide
     float idleWidth = 200.0f;   // the resting pill
     float idleHeight = 34.0f;
     float topGap = 6.0f;        // space between the top of the screen and the island
@@ -30,7 +32,7 @@ struct LayoutSettings
 
 struct GlassSettings
 {
-    float tintOpacity = 0.55f;    // dark tint over the blur: 0 = clear, 1 = solid
+    float tintOpacity = 0.42f;    // dark tint over the blur: 0 = clear, 1 = solid
     float saturation = 1.6f;      // colour boost of what's behind (1 = unchanged)
     float brightness = 1.0f;      // brightness of what's behind (1 = unchanged)
     float noiseOpacity = 0.035f;  // faint grain that hides banding in the blur

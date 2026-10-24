@@ -28,6 +28,12 @@ namespace
     constexpr UINT_PTR kHoverTimer = 3;
     constexpr UINT_PTR kLeaveTimer = 4;
 
+    // Tucking away: once the island has faded out (IslandVisuals::SetPresent),
+    // the window drops to the thin strip at once, so the empty window can't
+    // catch clicks meant for what's under it (e.g. browser tabs).
+    constexpr UINT_PTR kTuckTimer = 5;
+    constexpr UINT kTuckShrinkMs = 180;
+
     // When the panel is opened from the tray, the mouse isn't on it; give
     // you time to get there before it closes again.
     constexpr int kTrayOpenLeaveDelayMs = 4000;
@@ -47,6 +53,7 @@ namespace
         switch (state)
         {
         case IslandState::Hidden: return L"hidden";
+        case IslandState::Tucked: return L"tucked";
         case IslandState::Idle: return L"idle";
         case IslandState::Peek: return L"peek";
         default: return L"expanded";
@@ -172,6 +179,7 @@ void IslandWindow::ApplySettings(const Settings& settings)
     m_glass = settings.glass;
     m_showDelayMs = settings.games.showDelayMs;
     m_machine.SetTiming({ m_motion.hoverIntentMs, m_motion.leaveDelayMs, m_motion.expandedLeaveDelayMs, m_showDelayMs });
+    m_machine.SetAutoHide(m_layout.autoHide);
     Rebuild();
 }
 
@@ -212,7 +220,7 @@ void IslandWindow::SetSlim(bool slimRequested)
     }
     m_slim = slim;
     Log::Info(L"island {}", slim ? L"slim (maximized window under it)" : L"pill");
-    if (State() == IslandState::Idle)
+    if (State() == IslandState::Idle && !m_layout.autoHide)
     {
         ShowState(true);  // morph between the pill and the line
     }
@@ -393,6 +401,7 @@ void IslandWindow::EnterState(IslandState from, IslandState to)
         Log::Info(L"island hidden");
         break;
 
+    case IslandState::Tucked:
     case IslandState::Idle:
         if (from == IslandState::Hidden)
         {
@@ -449,7 +458,8 @@ View* IslandWindow::ViewFor(IslandState state) const
     {
     case IslandState::Peek: return m_peekView.get();
     case IslandState::Expanded: return ExpandedView();
-    default: return m_slim ? nullptr : m_idleView.get();  // the slim line shows no content
+    case IslandState::Idle: return SlimLine() ? nullptr : m_idleView.get();  // the slim line shows no content
+    default: return nullptr;  // hidden or tucked away
     }
 }
 
@@ -471,8 +481,11 @@ IslandShape IslandWindow::ShapeFor(IslandState state) const
         const View* view = ExpandedView();
         return { view->Width(), view->Height(), top, m_ui.Px(m_layout.panelRadius) };
     }
+    case IslandState::Tucked:
+        // The pill, just above the top edge: it slides down when revealed.
+        return { m_idleView->Width(), m_idleView->Height(), -m_idleView->Height(), m_idleView->Height() / 2.0f };
     default:
-        if (m_slim)
+        if (SlimLine())
         {
             // Touches the very top edge: the cursor stops there, so it's easy to hit.
             const float height = std::max(2.0f, m_ui.Px(m_layout.slimHeight));
@@ -480,6 +493,12 @@ IslandShape IslandWindow::ShapeFor(IslandState state) const
         }
         return { m_idleView->Width(), m_idleView->Height(), top, m_idleView->Height() / 2.0f };
     }
+}
+
+bool IslandWindow::SlimLine() const
+{
+    // With auto-hide the island only shows while the mouse is on it, and then as the pill.
+    return m_slim && !m_layout.autoHide;
 }
 
 void IslandWindow::ShowState(bool animate)
@@ -498,24 +517,44 @@ void IslandWindow::ShowState(bool animate)
         }
     }
 
+    m_visuals.SetPresent(state != IslandState::Tucked, animate);
+    KillTimer(m_hwnd, kTuckTimer);
+
     // The window is never resized during the motion (that's what makes most
     // "island" apps stutter). It grows once, at the start, to fit the target
     // plus a little room for the spring's overshoot; it shrinks to fit
     // exactly once the motion has settled. In between, everything is GPU.
-    const float width = shape.width;
-    const float height = shape.top + shape.height;
+    float width = shape.width;
+    float height = shape.top + shape.height;
+    if (state == IslandState::Tucked)
+    {
+        const auto strip = StripSize();
+        width = strip.x;
+        height = strip.y;
+    }
     if (animate)
     {
         const float margin = std::ceil(std::max(shape.width, shape.height) * 0.05f) + 2.0f;
         ResizeWindow(std::max(static_cast<float>(m_windowSize.cx), width + 2.0f * margin),
                      std::max(static_cast<float>(m_windowSize.cy), height + margin));
         m_visuals.MorphTo(shape, m_motion.morph, true, [this, width, height] { ResizeWindow(width, height); });
+        if (state == IslandState::Tucked)
+        {
+            SetTimer(m_hwnd, kTuckTimer, kTuckShrinkMs, nullptr);
+        }
     }
     else
     {
         m_visuals.MorphTo(shape, m_motion.morph, false);
         ResizeWindow(width, height);
     }
+}
+
+Motion::float2 IslandWindow::StripSize() const
+{
+    // Tucked away, the window is an invisible strip along the top edge (like
+    // an auto-hide taskbar's): the mouse touching it brings the pill down.
+    return { m_ui.EvenPx(m_layout.revealWidth), std::max(2.0f, std::floor(m_ui.scale * 2.0f)) };
 }
 
 void IslandWindow::ResizeWindow(float width, float height)
@@ -786,6 +825,14 @@ LRESULT IslandWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPAR
             return 0;
         case kLeaveTimer:
             m_machine.TimerElapsed(IslandTimer::Leave);
+            return 0;
+        case kTuckTimer:
+            KillTimer(hwnd, kTuckTimer);
+            if (State() == IslandState::Tucked)
+            {
+                const auto strip = StripSize();
+                ResizeWindow(strip.x, strip.y);
+            }
             return 0;
         }
         break;

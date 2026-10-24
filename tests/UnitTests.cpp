@@ -323,6 +323,66 @@ namespace
             CHECK(machine.State() == IslandState::Expanded);
             CHECK(host.timers[IslandTimer::Leave] == 4000);
         }
+        {
+            // Auto-hide: the island rests out of sight, comes down when the
+            // mouse touches the top edge, then behaves as usual.
+            FakeHost host;
+            StateMachine machine(host);
+            machine.SetAutoHide(true);
+            machine.FullscreenChanged(false, true);
+            CHECK(machine.State() == IslandState::Tucked);
+            machine.PointerEntered();
+            CHECK(machine.State() == IslandState::Idle);  // the pill
+            CHECK(host.Running(IslandTimer::HoverIntent));
+            Fire(machine, host, IslandTimer::HoverIntent);
+            CHECK(machine.State() == IslandState::Peek);
+            machine.BackgroundClicked();
+            CHECK(machine.State() == IslandState::Expanded);
+
+            // Leaving the control center goes straight back out of sight.
+            machine.PointerLeft();
+            Fire(machine, host, IslandTimer::Leave);
+            CHECK(machine.State() == IslandState::Tucked);
+
+            // Leaving the pill before Peek: tucked away after the leave delay;
+            // coming back in time keeps it out.
+            machine.PointerEntered();
+            machine.PointerLeft();
+            CHECK(machine.State() == IslandState::Idle && host.timers[IslandTimer::Leave] == 300);
+            machine.PointerEntered();
+            CHECK(!host.Running(IslandTimer::Leave));
+            machine.PointerLeft();
+            Fire(machine, host, IslandTimer::Leave);
+            CHECK(machine.State() == IslandState::Tucked);
+
+            // A window dragged to the top of the screen (Snap Layouts) doesn't bring it out.
+            machine.WindowDragChanged(true);
+            machine.PointerEntered();
+            CHECK(machine.State() == IslandState::Tucked);
+            machine.PointerLeft();
+            machine.WindowDragChanged(false);
+
+            // Fullscreen hides it; it comes back tucked away.
+            machine.FullscreenChanged(true);
+            CHECK(machine.State() == IslandState::Hidden);
+            machine.FullscreenChanged(false);
+            Fire(machine, host, IslandTimer::Show);
+            CHECK(machine.State() == IslandState::Tucked);
+
+            // Turning auto-hide off in settings.json shows the pill; on again tucks it.
+            machine.SetAutoHide(false);
+            CHECK(machine.State() == IslandState::Idle);
+            machine.SetAutoHide(true);
+            CHECK(machine.State() == IslandState::Tucked);
+
+            // A pose holds the pill; releasing it tucks it away after the delay.
+            machine.SetPinned(true);
+            machine.ShowDirectly(IslandState::Idle);
+            CHECK(!host.Running(IslandTimer::Leave));
+            machine.SetPinned(false);
+            Fire(machine, host, IslandTimer::Leave);
+            CHECK(machine.State() == IslandState::Tucked);
+        }
     }
 
     // A control that writes down every event it gets.
@@ -411,15 +471,14 @@ namespace
             // non-final values, release reports the final one, and changes
             // from outside are ignored while dragging (no jitter, PLAN.md D9).
             Slider slider(ui);
-            const float thumb = ui.EvenPx(16.0f);
             slider.SetBounds(0, 0, 216, 24);
             std::vector<std::pair<float, bool>> changes;
             slider.onChange = [&](float value, bool final) { changes.push_back({ value, final }); };
             ControlHost host;
             host.Add(slider);
 
-            host.PointerMove(thumb / 2, 12);
-            host.PointerDown(thumb / 2, 12);  // the thumb's leftmost position = 0
+            host.PointerMove(0, 12);
+            host.PointerDown(0, 12);  // the left end = 0
             CHECK(std::abs(slider.Value()) < 0.001f);
             host.PointerMove(108, 12);  // the middle
             CHECK(std::abs(slider.Value() - 0.5f) < 0.001f);

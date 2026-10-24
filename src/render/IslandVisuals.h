@@ -56,6 +56,9 @@ public:
     // replaced it first.
     void MorphTo(const IslandShape& shape, const Spring& spring, bool animate, std::function<void()> onSettled = nullptr);
 
+    // Fades the whole island in or out (out = tucked away above the top edge).
+    void SetPresent(bool present, bool animate);
+
 private:
     void FollowPill(const winrt::Windows::UI::Composition::CompositionRoundedRectangleGeometry& geometry);
     void CreateGrain(Graphics& graphics);

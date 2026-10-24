@@ -69,7 +69,7 @@ struct SliderRow
     {
         const float iconSize = ui.EvenPx(30.0f);
         const float sliderX = x + iconSize + ui.Px(8.0f);
-        const float sliderHeight = ui.Px(22.0f);
+        const float sliderHeight = ui.EvenPx(22.0f);  // even, like the bar inside it, so the bar sits on whole pixels
         caption = std::make_unique<Label>(ui, 11.0f);
         caption->SetMaxWidth(x + width - sliderX);
         caption->Visual().Opacity(0.55f);

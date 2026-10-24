@@ -968,13 +968,14 @@ void Segmented::OnPointerUp(bool inside)
 
 Slider::Slider(const Ui& ui) : Control(ui)
 {
-    m_thumbSize = ui.EvenPx(16.0f);
-    m_thin = ui.Px(5.0f);
-    m_thick = ui.Px(8.0f);
+    // A thick bar with no knob: how much of it is filled is the value.
+    // Even pixel sizes keep it centred on whole pixels, so its edges stay crisp.
+    m_thin = ui.EvenPx(8.0f);
+    m_thick = ui.EvenPx(10.0f);
 
-    // Two numbers drive everything: Value (0..1) and the track Thickness.
-    // The fill, the thumb and the track outline follow them through
-    // expressions, so one spring moves all of them together.
+    // Two numbers drive everything: Value (0..1) and the bar's Thickness.
+    // The fill and the bar's outline follow them through expressions, so
+    // one spring moves both together.
     m_properties = ui.compositor.CreatePropertySet();
     m_properties.InsertScalar(L"Value", 0.0f);
     m_properties.InsertScalar(L"Thickness", m_thin);
@@ -986,24 +987,10 @@ Slider::Slider(const Ui& ui) : Control(ui)
     m_trackBackground.Brush(ui.compositor.CreateColorBrush(White(0.2f)));
     m_fill = ui.compositor.CreateSpriteVisual();
     m_fill.Brush(ui.compositor.CreateColorBrush(White(0.92f)));
+    m_fill.Opacity(0.9f);
     m_track.Children().InsertAtTop(m_trackBackground);
     m_track.Children().InsertAtTop(m_fill);
     m_root.Children().InsertAtTop(m_track);
-
-    auto thumbShape = ui.compositor.CreateEllipseGeometry();
-    thumbShape.Center({ m_thumbSize / 2.0f, m_thumbSize / 2.0f });
-    thumbShape.Radius({ m_thumbSize / 2.0f - 0.5f, m_thumbSize / 2.0f - 0.5f });
-    auto thumb = ui.compositor.CreateSpriteShape(thumbShape);
-    thumb.FillBrush(ui.compositor.CreateColorBrush(White(1.0f)));
-    thumb.StrokeBrush(ui.compositor.CreateColorBrush(Black(0.25f)));
-    thumb.StrokeThickness(1.0f);
-    m_thumb = ui.compositor.CreateShapeVisual();
-    m_thumb.Size({ m_thumbSize, m_thumbSize });
-    m_thumb.Shapes().Append(thumb);
-    m_thumb.AnchorPoint({ 0.5f, 0.5f });
-    m_thumb.CenterPoint({ m_thumbSize / 2.0f, m_thumbSize / 2.0f, 0.0f });
-    m_thumb.Scale({ 0.8f, 0.8f, 1.0f });
-    m_root.Children().InsertAtTop(m_thumb);
 }
 
 void Slider::Layout()
@@ -1019,20 +1006,19 @@ void Slider::Layout()
         animation.SetReferenceParameter(L"p", m_properties);
         animation.SetScalarParameter(L"W", m_width);
         animation.SetScalarParameter(L"H", m_height);
-        animation.SetScalarParameter(L"T", m_thumbSize);
         return animation;
     };
-    // The thumb's center travels from T/2 to W - T/2; the fill ends at it.
+    // The bar is centred in the control's height; the fill runs from its
+    // left end to Value. The rounded clip shapes both ends.
     m_trackShape.StartAnimation(L"Offset", expression(L"Vector2(0, (H - p.Thickness) / 2)"));
     m_trackShape.StartAnimation(L"Size", expression(L"Vector2(W, p.Thickness)"));
     m_trackShape.StartAnimation(L"CornerRadius", expression(L"Vector2(p.Thickness / 2, p.Thickness / 2)"));
-    m_fill.StartAnimation(L"Scale", expression(L"Vector3((T / 2 + p.Value * (W - T)) / W, 1, 1)"));
-    m_thumb.StartAnimation(L"Offset", expression(L"Vector3(T / 2 + p.Value * (W - T), H / 2, 0)"));
+    m_fill.StartAnimation(L"Scale", expression(L"Vector3(p.Value, 1, 1)"));
 }
 
 float Slider::ValueAt(float x) const
 {
-    return std::clamp((x - m_thumbSize / 2.0f) / std::max(1.0f, m_width - m_thumbSize), 0.0f, 1.0f);
+    return std::clamp(x / std::max(1.0f, m_width), 0.0f, 1.0f);
 }
 
 void Slider::Show(float value, bool animate)
@@ -1059,27 +1045,24 @@ void Slider::SetValue(float value, bool animate)
     Show(value, animate);
 }
 
-void Slider::UpdateThumb()
+void Slider::UpdateLook()
 {
-    const float scale = m_dragging ? 1.05f : m_hovered ? 1.0f : 0.8f;
-    Motion::SpringTo(m_thumb, L"Scale", float3{ scale, scale, 1.0f }, m_ui.motion->press);
+    // Hovered or held: the bar grows a little and the fill turns fully bright.
+    const bool active = m_hovered || m_dragging;
+    Motion::SpringTo(m_properties, L"Thickness", active ? m_thick : m_thin, m_ui.motion->slider);
+    Motion::EaseTo(m_fill, L"Opacity", active ? 1.0f : 0.9f, m_ui.motion->hoverFadeMs);
 }
 
 void Slider::OnHoverChanged(bool hovered)
 {
     m_hovered = hovered;
-    Motion::SpringTo(m_properties, L"Thickness", hovered || m_dragging ? m_thick : m_thin, m_ui.motion->slider);
-    UpdateThumb();
+    UpdateLook();
 }
 
 void Slider::OnPressChanged(bool pressed)
 {
     m_dragging = pressed;
-    UpdateThumb();
-    if (!pressed && !m_hovered)
-    {
-        Motion::SpringTo(m_properties, L"Thickness", m_thin, m_ui.motion->slider);
-    }
+    UpdateLook();
 }
 
 void Slider::OnPointerDown(float x, float)

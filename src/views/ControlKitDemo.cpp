@@ -81,7 +81,7 @@ void ControlKitDemo::Build()
     const float icon = ui.EvenPx(32.0f);
     const float sliderX = pad + icon + ui.Px(10.0f);
     const float sliderWidth = width - pad - sliderX;
-    const float sliderHeight = ui.Px(24.0f);
+    const float sliderHeight = ui.EvenPx(24.0f);
     auto sliderRow = [&](std::unique_ptr<Label>& caption, const wchar_t* text, std::unique_ptr<IconButton>& iconButton,
                          wchar_t glyph, std::unique_ptr<Slider>& slider, float value)
     {
