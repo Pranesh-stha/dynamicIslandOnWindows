@@ -41,6 +41,12 @@
     "style": "clear",
     "blur": 6,             // clear glass: how soft what's behind looks (0 = sharp)
     "refraction": 1.0,     // clear glass: how strongly the edges bend (0 = flat)
+    // Clear glass, Peek and the open panel: new pictures of what's behind,
+    // per second. More = smoother when things move behind it, but costs the
+    // GPU (measured with video behind: 15 -> ~10 %, 30 -> ~18 %, 60 -> ~24 %
+    // of the Intel GPU while open; nothing while tucked away). The small pill
+    // always uses 2.
+    "fps": 15,
     "tintOpacity": 0.42,   // dark tint over the blur: 0 = clear, 1 = solid
     "saturation": 1.6,     // colour boost of what's behind (1 = unchanged)
     "brightness": 1.0,     // brightness of what's behind (1 = unchanged)

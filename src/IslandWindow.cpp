@@ -35,6 +35,9 @@ namespace
     constexpr UINT_PTR kTuckTimer = 5;
     constexpr UINT kTuckShrinkMs = 310;
 
+    // Clear glass behind the small pill: new pictures a second (see GlassCapture::SetMaxFps).
+    constexpr int kPillGlassFps = 2;
+
     // When the panel is opened from the tray, the mouse isn't on it; give
     // you time to get there before it closes again.
     constexpr int kTrayOpenLeaveDelayMs = 4000;
@@ -224,6 +227,8 @@ void IslandWindow::UpdateGlass()
 {
     // Clear glass needs transparency effects on (like the frosted) and screen capture.
     const bool clear = m_capture.SetEnabled(m_glass.style == L"clear" && m_effectsEnabled);
+    const IslandState current = State();
+    m_capture.SetMaxFps(current == IslandState::Peek || current == IslandState::Expanded ? m_glass.fps : kPillGlassFps);
 
     // The strip it copies: centred like the island, from the top edge down,
     // wide and tall enough for the biggest panel and its spring overshoot.
@@ -464,6 +469,9 @@ void IslandWindow::EnterState(IslandState from, IslandState to)
     {
         return state == IslandState::Idle || state == IslandState::Peek || state == IslandState::Expanded;
     };
+    // The small pill (e.g. while a timer runs) looks behind only a couple of
+    // times a second; Peek and the control center as often as glass.fps says.
+    m_capture.SetMaxFps(to == IslandState::Peek || to == IslandState::Expanded ? m_glass.fps : kPillGlassFps);
     if (showing(to) && !showing(from))
     {
         m_visuals.ShowClear(false, false);  // frosted until a fresh copy arrives (not a stale one)
@@ -655,6 +663,8 @@ void IslandWindow::ResizeWindow(float width, float height)
     // Widths are even, so the window and the pill share the same center pixel.
     const int centerX = m_monitor.left + (m_monitor.right - m_monitor.left) / 2;
     SetWindowPos(m_hwnd, nullptr, centerX - w / 2, m_monitor.top, w, h, SWP_NOACTIVATE | SWP_NOZORDER);
+    const int monitorCenter = (m_monitor.right - m_monitor.left) / 2;
+    m_capture.SetOwnWindow({ monitorCenter - w / 2, 0, monitorCenter - w / 2 + w, h });  // in the monitor's pixels
 }
 
 Motion::float2 IslandWindow::ToLayer(POINT point, const View& view) const

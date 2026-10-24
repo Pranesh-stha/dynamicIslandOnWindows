@@ -38,6 +38,7 @@ struct GlassSettings
     std::wstring style = L"clear";
     float blur = 6.0f;            // clear glass: how soft what's behind looks (DIP)
     float refraction = 1.0f;      // clear glass: how strongly the edges bend (0 = flat)
+    int fps = 15;                 // clear glass, Peek and panel: new pictures of what's behind a second (each costs the GPU)
     float tintOpacity = 0.42f;    // dark tint over the blur: 0 = clear, 1 = solid
     float saturation = 1.6f;      // colour boost of what's behind (1 = unchanged)
     float brightness = 1.0f;      // brightness of what's behind (1 = unchanged)

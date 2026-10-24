@@ -8,7 +8,7 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 - **Quit / reopen:** tray icon (^ next to the clock) → Quit Island; reopen from the Start menu (search "Island"). Tray → "Start with Windows" (off until you tick it). After changing code: `pwsh -File tools\install.ps1 -Build` updates the installed copy.
 - Hands-on checks are left for you in the Phase 1–7 lists (games + PresentMon, how the glass and motion feel, sleep/wake).
 - ⚠ Two crashes were found and fixed on 2026-10-24 (§12): an Island crash on an empty media object, and **DWM (the Windows compositor) crashing** when a rebuilt panel released objects with springs still running. None since.
-- **Last updated:** 2026-10-24 17:56 NPT (UTC+05:45)
+- **Last updated:** 2026-10-24 18:12 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
@@ -415,7 +415,7 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
 
 **Motion polish** (small animation improvements): done in Phase 6b: content sliding with the morph, staggered entrances, the gliding list highlight, sliders growing while held, value bubbles, toggle colour bloom. Still open, for you to pick: press feedback that spreads from where you clicked; an edge light that follows the mouse; rolling digits for numbers like battery % and volume; a soft glow around the pill while music plays (only while the island shows); carrying a morph's speed when it reverses (smoother change of mind).
 
-**Liquid Glass:** mostly done (clear glass with the lens ring, Phase 6b). A full version, with every pixel bent by a real lens shape, would need Island to draw the glass itself every frame on the GPU (Windows' compositor doesn't take custom shaders), only while the island shows. Cost: see §12 (measured 2026-10-24).
+**Liquid Glass:** mostly done (clear glass with the lens ring, Phase 6b). A full version, with every pixel bent by a real lens shape, would need Island to draw the glass itself every frame on the GPU (Windows' compositor doesn't take custom shaders), only while the island shows. **Not now** (your call, 2026-10-24). Measured cost of what we have (Intel GPU, video-like motion behind the open panel, §12 18:1x): frosted 1.3 %; clear at 60/30/15/10 pictures a second 24/18/10/7 %; the lens adds nothing measurable. So the cost is the screen capture itself (Windows composes the whole screen once more, without the island, for every picture), not the blur.
 
 **Dropped (you):**
 - Notifications in the island.
@@ -629,6 +629,7 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-24 | Installed per user in `%LOCALAPPDATA%\Programs\Island` with a Start menu entry (no admin); "Start with Windows" is a Startup-folder shortcut the user turns on from the tray (off by default) |
 | 2026-10-24 | No automatic restart after a crash: the previous run's log is kept and the crash noted; reopen from the Start menu |
 | 2026-10-24 | No dark-mode tray menu (only possible through undocumented Windows calls) |
+| 2026-10-24 | Clear glass looks behind 15 times a second in Peek and the open panel (`glass.fps`) and only 2 times a second behind the small pill (e.g. a running timer); frames whose only change is the island itself are skipped |
 | 2026-10-24 | Later ideas, your answers: **yes** to timer/stopwatch and a charging animation; **no** to notifications; **keep** Windows' own volume/brightness popup |
 
 ## 12. Update log
@@ -637,6 +638,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 18:12 | **Clear glass cost measured and cut** (your request). First result: with the panel open, Windows' compositor used **~25 % of the Intel GPU** (Island itself ~5 %). Found: (1) a loop: the island redrawing counted as a change behind it, so every frame was captured; (2) every captured picture makes Windows compose the whole screen once more. Comparison with motion behind the open panel: frosted 1.3 %; clear at 60/30/15/10 pictures a second 23.8/17.6/9.7/6.6 %; lens on/off no difference. **Fixed:** frames that only changed inside the island's own window are skipped (Windows' dirty regions); new setting `glass.fps` (default **15**) for Peek and the panel; **2** for the small pill. **Now:** small pill 1.4 % (same as frosted), open panel 7.8 % worst case, 0 when tucked. Your settings, untouched (temporary copies with their own settings were used). |
 | 2026-10-24 17:56 | **Later ideas sorted with you** (§7 "Later ideas", §11): yes to timer/stopwatch and a charging animation; no to notifications; Windows' own volume/brightness popup stays. Motion polish list split into done (Phase 6b) and still open. You confirmed the six hands-on checks (sleep button, lock/unlock, games, Wi-Fi/Bluetooth, feel). A GPU measurement of the clear glass was attempted, but Brave was fullscreen, so the island was (correctly) hidden and nothing was measured; not repeated automatically, because it would cover the top of your screen with a moving test pattern while you use the PC. |
 | 2026-10-24 17:29 | **Sleep button** in the header (your request). New: `services/SystemSleep.*`. **Checked:** `powercfg /a` (S3 available, no Modern Standby, hibernate off); Release + Debug build clean, 205 checks; header screenshot with the four buttons; installed copy updated. **Not checked by me:** pressing it (it would have put your PC to sleep). |
 | 2026-10-24 17:22 | **Phase 7 built.** New: `tools/install.ps1`, `tools/uninstall.ps1`, `tools/make_icon.ps1`, `src/Island.rc` + `Island.ico`, `platform/Startup.*`; tray gained "Start with Windows"; the log keeps the previous run; re-checks after sleep/unlock; capture restarts after a GPU reset. **Checked:** see Phase 7; Island is installed and running from `%LOCALAPPDATA%\Programs\Island`, and "Island" is in your Start menu. "Start with Windows" left **off** for you to decide. |

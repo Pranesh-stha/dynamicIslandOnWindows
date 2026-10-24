@@ -49,6 +49,17 @@ public:
     // centred, from the top down `height`.
     void SetRegion(HMONITOR monitor, int width, int height);
 
+    // The island's own window, in the monitor's pixels. Changes only there
+    // are the island itself redrawing (it's left out of the picture), so
+    // they're skipped: otherwise the glass updating would itself count as a
+    // change behind it, again and again (measured: 25 % of the GPU).
+    void SetOwnWindow(const RECT& rect) { m_ownWindow = rect; }
+
+    // At most this many new pictures a second. Each one costs the GPU a
+    // little (Windows composes the screen once more, without the island),
+    // so the small pill asks for few and the open panel for more.
+    void SetMaxFps(int fps);
+
     void Start();
     void Stop();
 
@@ -58,6 +69,7 @@ public:
 
 private:
     void OnFrame();
+    bool ChangedBehind(const winrt::Windows::Graphics::Capture::Direct3D11CaptureFrame& frame, const RECT& strip) const;
 
     HWND m_window{};
     Graphics* m_graphics = nullptr;
@@ -71,6 +83,9 @@ private:
     int m_starts = 0;           // the first few starts are logged
     HMONITOR m_monitor{};
     int m_width = 0, m_height = 0;
+    RECT m_ownWindow{};
+    int m_fps = 60;
+    int m_skipped = 0;  // frames skipped since Start (for the log)
     winrt::Windows::UI::Composition::CompositionDrawingSurface m_surface{ nullptr };
     winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice m_device{ nullptr };
     winrt::com_ptr<ID3D11Device> m_d3d;  // the device m_device wraps

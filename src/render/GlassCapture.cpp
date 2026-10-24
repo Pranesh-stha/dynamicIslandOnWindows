@@ -5,6 +5,7 @@
 #include <Windows.Graphics.Capture.Interop.h>
 #include <windows.graphics.directx.direct3d11.interop.h>
 
+#include <winrt/Windows.Foundation.Collections.h>
 #include <winrt/Windows.Graphics.DirectX.h>
 #include <winrt/Windows.System.h>
 
@@ -79,6 +80,26 @@ void GlassCapture::SetRegion(HMONITOR monitor, int width, int height)
     }
 }
 
+void GlassCapture::SetMaxFps(int fps)
+{
+    fps = std::clamp(fps, 1, 60);
+    if (fps == m_fps)
+    {
+        return;
+    }
+    m_fps = fps;
+    if (m_session)
+    {
+        try
+        {
+            m_session.MinUpdateInterval(std::chrono::milliseconds(1000 / m_fps - 1));
+        }
+        catch (const winrt::hresult_error&)
+        {
+        }
+    }
+}
+
 void GlassCapture::Start()
 {
     if (!m_enabled || m_running || !m_monitor)
@@ -132,12 +153,21 @@ void GlassCapture::Start()
         }
         try
         {
-            m_session.MinUpdateInterval(std::chrono::milliseconds(16));  // at most ~60 frames a second
+            m_session.MinUpdateInterval(std::chrono::milliseconds(1000 / std::max(1, m_fps) - 1));
+        }
+        catch (const winrt::hresult_error&)
+        {
+        }
+        try
+        {
+            // Each frame says which parts of the screen changed (see SetOwnWindow).
+            m_session.DirtyRegionMode(capture::GraphicsCaptureDirtyRegionMode::ReportOnly);
         }
         catch (const winrt::hresult_error&)
         {
         }
         m_freshFrame = false;
+        m_skipped = 0;
         m_started = GetTickCount64();
         m_session.StartCapture();
         m_running = true;
@@ -165,6 +195,34 @@ void GlassCapture::Stop()
     }
 }
 
+bool GlassCapture::ChangedBehind(const capture::Direct3D11CaptureFrame& frame, const RECT& strip) const
+{
+    try
+    {
+        const auto regions = frame.DirtyRegions();
+        for (const auto& region : regions)
+        {
+            const RECT changed{ region.X, region.Y, region.X + region.Width, region.Y + region.Height };
+            RECT inStrip{};
+            if (!IntersectRect(&inStrip, &changed, &strip))
+            {
+                continue;  // somewhere else on the screen
+            }
+            const bool onlyOwn = inStrip.left >= m_ownWindow.left && inStrip.top >= m_ownWindow.top &&
+                                 inStrip.right <= m_ownWindow.right && inStrip.bottom <= m_ownWindow.bottom;
+            if (!onlyOwn)
+            {
+                return true;  // something behind the island changed
+            }
+        }
+        return false;
+    }
+    catch (const winrt::hresult_error&)
+    {
+        return true;  // this Windows doesn't say: copy every frame
+    }
+}
+
 void GlassCapture::OnFrame()
 {
     if (!m_pool)
@@ -185,11 +243,20 @@ void GlassCapture::OnFrame()
         return;
     }
 
+    // Only frames with a change behind the island are worth copying: not
+    // the island redrawing itself, and not changes elsewhere on the screen.
+    const float left = std::floor((static_cast<float>(size.Width) - static_cast<float>(m_width)) / 2.0f);
+    const RECT strip{ static_cast<LONG>(left), 0, static_cast<LONG>(left) + m_width, m_height };
+    if (m_freshFrame && !ChangedBehind(frame, strip))
+    {
+        ++m_skipped;
+        return;
+    }
+
     // Copy the strip behind the island into the glass's surface (on the GPU).
     winrt::com_ptr<IDXGISurface> source;
     winrt::check_hresult(frame.Surface().as<::Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>()->GetInterface(
         IID_PPV_ARGS(source.put())));
-    const float left = std::floor((static_cast<float>(size.Width) - static_cast<float>(m_width)) / 2.0f);
     const D2D1_RECT_F from{ left, 0.0f, left + static_cast<float>(m_width), static_cast<float>(m_height) };
     m_graphics->Draw(m_surface, static_cast<float>(m_width), static_cast<float>(m_height), [&](ID2D1DeviceContext* context)
     {
