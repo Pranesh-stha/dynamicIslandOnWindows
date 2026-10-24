@@ -7,8 +7,11 @@
 #include "IslandWindow.h"
 #include "platform/Settings.h"
 #include "platform/Tray.h"
+#include "services/AudioService.h"
+#include "services/BrightnessService.h"
 #include "services/FullscreenWatcher.h"
 #include "services/MediaService.h"
+#include "services/RadioService.h"
 
 // Owns every part of Island and connects them: services report what's going
 // on (fullscreen apps, ...) and the island window reacts.
@@ -32,4 +35,7 @@ private:
     Tray m_tray;
     FullscreenWatcher m_fullscreen;
     MediaService m_media;
+    AudioService m_audio;
+    BrightnessService m_brightness;
+    RadioService m_radios;
 };

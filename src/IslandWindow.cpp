@@ -263,6 +263,50 @@ void IslandWindow::PushMedia()
     m_controlCenter->SetMedia(m_media);
 }
 
+void IslandWindow::SetAudio(const AudioState& audio)
+{
+    m_audio = audio;
+    if (State() != IslandState::Hidden)
+    {
+        m_controlCenter->SetAudio(audio);
+    }
+}
+
+void IslandWindow::SetRadios(const RadiosState& radios)
+{
+    m_radios = radios;
+    if (State() != IslandState::Hidden)
+    {
+        m_controlCenter->SetRadios(radios);
+    }
+}
+
+void IslandWindow::SetBrightness(const BrightnessState& brightness)
+{
+    m_brightness = brightness;
+    if (State() == IslandState::Hidden)
+    {
+        return;
+    }
+    if (m_controlCenter->SetBrightness(brightness))
+    {
+        // A display came or went: one slider more or less, so the panel's
+        // height changes. Rebuild it, and morph to the new height if it's open.
+        m_controlCenter->Build();
+        if (State() == IslandState::Expanded && ExpandedView() == m_controlCenter.get())
+        {
+            ShowState(true);
+        }
+    }
+}
+
+void IslandWindow::PushQuickControls()
+{
+    m_controlCenter->SetAudio(m_audio);
+    SetBrightness(m_brightness);
+    m_controlCenter->SetRadios(m_radios);
+}
+
 void IslandWindow::OpenControlKitDemo()
 {
     const bool switching = !m_showDemo && State() == IslandState::Expanded;
@@ -323,6 +367,7 @@ void IslandWindow::EnterState(IslandState from, IslandState to)
         if (from == IslandState::Hidden)
         {
             PushMedia();  // catch up on what changed while hidden
+            PushQuickControls();
             ShowState(false);
             ShowNow();
         }
@@ -696,6 +741,10 @@ LRESULT IslandWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPAR
         case kPlacementTimer:
             KillTimer(hwnd, kPlacementTimer);
             PlaceOnPrimaryMonitor();
+            if (m_onDisplaysChanged && message == WM_TIMER)
+            {
+                m_onDisplaysChanged();
+            }
             return 0;
         case kShowTimer:
             m_machine.TimerElapsed(IslandTimer::Show);

@@ -62,12 +62,30 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
     actions.previous = [this] { m_media.Previous(); };
     actions.nextMediaSession = [this] { m_media.ShowNextSession(); };
     m_media.Start([this](const MediaState& media) { m_island.SetMedia(media); });
+
+    // Quick controls.
+    actions.setVolume = [this](float volume) { m_audio.SetVolume(volume); };
+    actions.toggleMute = [this] { m_audio.ToggleMute(); };
+    actions.setBrightness = [this](const std::wstring& display, float value) { m_brightness.Set(display, value); };
+    actions.setWifi = [this](bool on) { m_radios.SetWifi(on); };
+    actions.setBluetooth = [this](bool on) { m_radios.SetBluetooth(on); };
+    actions.openSettings = [](const wchar_t* page) { OpenWithDefaultApp(page); };
+    m_audio.Start([this](const AudioState& audio) { m_island.SetAudio(audio); });
+    m_brightness.Start([this](const BrightnessState& brightness) { m_island.SetBrightness(brightness); });
+    m_radios.Start([this](const RadiosState& radios) { m_island.SetRadios(radios); });
+    m_island.OnDisplaysChanged([this] { m_brightness.Refresh(); });
+
     m_island.OnStateChanged([this](IslandState state)
     {
-        // Windows' media events occasionally stop; re-read when the island opens.
+        // Windows' media events occasionally stop, and monitors can't tell us
+        // when their brightness changes: re-read when the island opens.
         if (state == IslandState::Peek || state == IslandState::Expanded)
         {
             m_media.Refresh();
+        }
+        if (state == IslandState::Expanded)
+        {
+            m_brightness.Refresh();
         }
     });
 

@@ -2,10 +2,16 @@
 // Run with:  ctest --preset debug   (after cmake --build --preset debug)
 // Each CHECK that fails prints its file and line; the exit code is the
 // number of failures, so 0 means everything passed.
+//
+// "IslandTests.exe --hardware" also checks the real volume and brightness
+// services. It changes the volume and each display's brightness by 1 %
+// (too little to notice) and puts them back.
 
 #include <windows.h>
 #include <Unknwn.h>
 #include <DispatcherQueue.h>
+#include <endpointvolume.h>
+#include <mmdeviceapi.h>
 #include <Shlwapi.h>
 
 #include <winrt/Windows.Foundation.h>
@@ -23,7 +29,10 @@
 #include "StateMachine.h"
 #include "platform/Settings.h"
 #include "render/Widgets.h"
+#include "services/AudioService.h"
+#include "services/BrightnessService.h"
 #include "services/MediaState.h"
+#include "services/Throttle.h"
 #include "services/WindowClassifier.h"
 
 namespace
@@ -318,7 +327,7 @@ namespace
         void OnPressChanged(bool pressed) override { events += pressed ? L"P" : L"p"; }
         void OnClick() override { events += L"C"; }
         void OnPointerUp(bool inside) override { events += inside ? L"U" : L"u"; Control::OnPointerUp(inside); }
-        void OnRightClick() override { events += L"R"; }
+        void OnRightClick() override { events += L"R"; Control::OnRightClick(); }
         bool OnWheel(float) override { events += L"W"; return true; }
         bool KeepsPressOutside() const override { return keepsPressOutside; }
     };
@@ -440,6 +449,8 @@ namespace
         CHECK(PickSession({ { false, 900, true }, { false, 100, false } }, -1, 1) == 1);
         CHECK(PickSession({ { false, 900, false }, { false, 100, true } }, -1, -1) == 1);
         CHECK(PickSession({ { false, 100, false }, { false, 900, false } }, -1, -1) == 1);
+        // The shown session went away (a browser replacing it): stay with that app.
+        CHECK(PickSession({ { false, 900, true, false }, { false, 100, false, true } }, -1, -1) == 1);
         // A manual choice wins while it exists.
         CHECK(PickSession({ { true, 900, false }, { false, 100, false } }, 1, 0) == 1);
         CHECK(PickSession({ { true, 900, false } }, 5, -1) == 0);
@@ -472,6 +483,37 @@ namespace
         media.playing = true;
         media.positionMeasuredAt = {};  // the app never said when
         CHECK(media.PositionAt(then) == 50.0);
+    }
+
+    void TestThrottle()
+    {
+        // Brightness writes to a slow monitor (PLAN.md E7, E9).
+        Throttle throttle(250);
+        int64_t next = 0;
+        CHECK(!throttle.Take(0, next) && next == Throttle::kNever);  // nothing wanted
+
+        throttle.Want(40);
+        CHECK(throttle.Take(1000, next) == 40);  // the first write goes out at once
+
+        // A drag: values arrive every few ms; only the newest is sent, at most every 250 ms.
+        throttle.Want(41);
+        throttle.Want(45);
+        CHECK(!throttle.Take(1100, next) && next == 1250);
+        throttle.Want(52);
+        CHECK(throttle.Take(1250, next) == 52);  // 41 and 45 were dropped
+
+        // The final value is sent even if it comes right after a write.
+        throttle.Want(60);
+        CHECK(!throttle.Take(1260, next) && next == 1500);
+        CHECK(throttle.Take(1500, next) == 60);
+        CHECK(!throttle.Take(5000, next) && next == Throttle::kNever);
+
+        // Wanting what the monitor already has sends nothing.
+        throttle.Want(60);
+        CHECK(!throttle.Take(6000, next) && next == Throttle::kNever);
+        throttle.Known(30);  // changed with the monitor's own buttons
+        throttle.Want(60);
+        CHECK(throttle.Take(6000, next) == 60);
     }
 
     void TestArtworkDecode()
@@ -525,6 +567,89 @@ namespace
         CHECK(threw);
     }
 
+    // Runs this thread's message loop (where the services deliver their
+    // results) until `done` or the timeout.
+    bool PumpUntil(const std::function<bool()>& done, int timeoutMs)
+    {
+        const uint64_t end = GetTickCount64() + timeoutMs;
+        while (!done() && GetTickCount64() < end)
+        {
+            MSG message;
+            while (PeekMessageW(&message, nullptr, 0, 0, PM_REMOVE))
+            {
+                DispatchMessageW(&message);
+            }
+            Sleep(5);
+        }
+        return done();
+    }
+
+    void TestHardware()
+    {
+        // Volume: a change made outside Island must reach it (volume keys, Quick Settings).
+        {
+            AudioState last;
+            int updates = 0;
+            AudioService audio;
+            audio.Start([&](const AudioState& state) { last = state; ++updates; });
+            CHECK(PumpUntil([&] { return updates > 0; }, 2000) && last.available);
+            std::printf("  audio: %ls at %.0f %%\n", last.device.c_str(), last.volume * 100.0f);
+
+            winrt::com_ptr<IMMDeviceEnumerator> devices;
+            winrt::com_ptr<IMMDevice> device;
+            winrt::com_ptr<IAudioEndpointVolume> endpoint;
+            CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(devices.put()));
+            devices->GetDefaultAudioEndpoint(eRender, eMultimedia, device.put());
+            device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_INPROC_SERVER, nullptr, endpoint.put_void());
+            float before = 0.0f;
+            endpoint->GetMasterVolumeLevelScalar(&before);
+            const float nudged = before > 0.5f ? before - 0.01f : before + 0.01f;
+            endpoint->SetMasterVolumeLevelScalar(nudged, nullptr);  // "someone else" changes it
+            CHECK(PumpUntil([&] { return std::abs(last.volume - nudged) < 0.002f; }, 2000));
+            endpoint->SetMasterVolumeLevelScalar(before, nullptr);
+            PumpUntil([&] { return std::abs(last.volume - before) < 0.002f; }, 2000);
+            CHECK(std::abs(last.volume - before) < 0.002f);
+        }
+
+        // Brightness: every display is found; a write through the service
+        // reaches the hardware (read back after a refresh), then it's restored.
+        {
+            BrightnessState last;
+            int updates = 0;
+            BrightnessService brightness;
+            brightness.Start([&](const BrightnessState& state) { last = state; ++updates; });
+            CHECK(PumpUntil([&] { return updates > 0; }, 5000) && !last.displays.empty());
+            for (const DisplayBrightness& display : BrightnessState(last).displays)
+            {
+                std::printf("  brightness: %ls%ls: %s, %d %%\n", display.name.c_str(), display.primary ? L" (primary)" : L"",
+                    display.supported ? "controllable" : "NOT controllable", display.value);
+                if (!display.supported)
+                {
+                    continue;
+                }
+                const int original = display.value;
+                const int target = original > 50 ? original - 1 : original + 1;
+                brightness.Set(display.id, target / 100.0f);
+                Sleep(2500);  // past the "keep our own value" window, so the refresh really reads the hardware
+                updates = 0;
+                brightness.Refresh();
+                PumpUntil([&] { return updates > 0; }, 5000);
+                int readBack = -1;
+                for (const DisplayBrightness& now : last.displays)
+                {
+                    if (now.id == display.id)
+                    {
+                        readBack = now.value;
+                    }
+                }
+                std::printf("    set %d %%, read back %d %%\n", target, readBack);
+                CHECK(readBack == target);
+                brightness.Set(display.id, original / 100.0f);  // put it back
+                Sleep(600);
+            }
+        }
+    }
+
     // The compositor needs a dispatcher queue on its thread, as in the app.
     winrt::Windows::System::DispatcherQueueController CreateDispatcherQueue()
     {
@@ -536,15 +661,17 @@ namespace
     }
 }
 
-int main()
+int main(int argc, char** argv)
 {
     winrt::init_apartment(winrt::apartment_type::single_threaded);
+    const bool hardware = argc > 1 && std::strcmp(argv[1], "--hardware") == 0;
 
     TestClassifier();
     TestSettings();
     TestStateMachine();
     TestMedia();
     TestArtworkDecode();
+    TestThrottle();
 
     // Controls need a real compositor (no window: nothing is shown).
     const auto queue = CreateDispatcherQueue();
@@ -556,6 +683,12 @@ int main()
     ui.layout = &layout;
     ui.scale = 1.25f;
     TestControls(ui);
+
+    if (hardware)
+    {
+        std::printf("hardware checks (volume and brightness move by 1 %% and back):\n");
+        TestHardware();
+    }
 
     std::printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures;

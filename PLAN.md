@@ -4,9 +4,10 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 
 ## 0. Current status (read this first)
 
-- **Current phase:** Phase 4 is built and verified: now playing in the idle pill, Peek and the control center (a click opens it). **Next: Phase 5, "Quick controls."**
-- Hands-on checks are left for you in the Phase 1–4 lists (real games, PresentMon, how the motion *feels*, Media Player and Chrome/Edge). It doesn't start at login yet (Phase 7).
-- **Last updated:** 2026-10-24 08:06 NPT (UTC+05:45)
+- **Current phase:** Phases 2–5 are built and verified. The island hides for games, morphs on glass, shows now playing, and its control center has volume, brightness for both displays, Wi-Fi and Bluetooth. **Next: Phase 6, "Displays."**
+- Hands-on checks are left for you in the Phase 1–5 lists (real games and PresentMon, how the motion *feels*, dragging the sliders, toggling Wi-Fi/Bluetooth). It doesn't start at login yet (Phase 7).
+- ⚠ Two crashes were found and fixed on 2026-10-24 (§12): an Island crash on an empty media object, and **DWM (the Windows compositor) crashing** when a rebuilt panel released objects with springs still running. If your screen went black for a few seconds around 08:15–08:20, that was it.
+- **Last updated:** 2026-10-24 08:35 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
@@ -15,7 +16,7 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
   - The exe ends up in `build\Debug\Island.exe` or `build\Release\Island.exe`.
   - In VS Code, F5 closes any running island, builds the project and starts the debugger.
   - `Island.exe --quit` closes a running island. Launching a new copy replaces the old one.
-- **Tests:** `ctest --preset debug` (or `release`) runs the unit tests. `pwsh -File tests\fullscreen_test.ps1` runs the game-safety test with real windows (it clicks its own test windows, so hands off the mouse for ~15 s). `pwsh -File tests\visual_check.ps1` takes screenshots and measures the morphs *hands-free* (no mouse, no focus change). `pwsh -File tests\media_test.ps1` plays a silent test track to check now playing (your own music is never touched).
+- **Tests:** `ctest --preset debug` (or `release`) runs the unit tests; `build\Release\IslandTests.exe --hardware` also checks the real volume and brightness (it moves them 1 % and back). `pwsh -File tests\fullscreen_test.ps1` runs the game-safety test with real windows (it clicks its own test windows, so hands off the mouse for ~15 s). `pwsh -File tests\visual_check.ps1` takes screenshots and measures the morphs *hands-free* (no mouse, no focus change). `pwsh -File tests\media_test.ps1` plays a silent test track to check now playing (your own music is never touched).
 - **Poses:** `Island.exe --pose idle|peek|expanded|demo` holds the island in one state (for screenshots); tray → "Keep open (for tuning)" does the same while you edit settings.
 - **Log and settings:** the tray menu opens `config\settings.json` (edits apply live) and the log (`%LOCALAPPDATA%\Island\island.log`).
 - **Rule for every session:** after any meaningful change, add an entry at the top of the update log (§12) and refresh this section.
@@ -196,9 +197,10 @@ windowsUI/
       MediaState.*           what's playing + pure rules: which app, app names, position, artwork decoding
       WindowClassifier.*     pure rule: normal / maximized / fullscreen (unit-tested)
       MediaService.*         now playing (GlobalSystemMediaTransportControls), events -> UI thread
-      AudioService.*         volume (Core Audio)
-      BrightnessService.*    laptop (WMI) + external monitor (DDC/CI)
-      RadioService.*         Wi-Fi / Bluetooth (Windows.Devices.Radios)
+      AudioService.*         volume + mute of the default output (Core Audio), follows device changes
+      BrightnessService.*    laptop (WMI) + external monitor (DDC/CI) on one worker thread
+      Throttle.h             newest-value-wins, rate-limited hardware writes (unit-tested)
+      RadioService.*         Wi-Fi / Bluetooth (Windows.Devices.Radios) + Wi-Fi network name
       DisplayService.*       connected monitors, open Settings pages
     platform/
       Tray.*  Startup.*  Settings.*  Log.*
@@ -287,13 +289,15 @@ This comes before any visual polish, so you can leave it running while gaming fr
   - ✅ Switching: a silent test player (`media_test.ps1`) takes over within ~0.1 s of starting to play (~0.5–0.7 s including starting the player); on pause the island moves to the app that's really playing; when it closes it moves on.
   - ✅ RAM 31 MB with Spotify + Brave sessions, idle CPU 0.0 ms over 20 s; 119 unit checks pass (incl. the artwork crop). ⬜ (later, Phase 7 soak) memory flat after an hour of track changes.
 
-### Phase 5: Quick controls
-- **Volume** slider and mute (Core Audio). It follows device changes such as plugging in headphones or connecting a Bluetooth headset.
-- **Brightness** for the laptop panel (WMI) and the Legion 27Q-10 (DDC/CI). These calls run off-thread, only the newest value is sent, and writes are rate-limited.
-- **Wi-Fi and Bluetooth** toggles (Radios API). Right-click opens the Settings page.
+### Phase 5: Quick controls ✅ built (2026-10-24)
+- ✅ **Volume** slider (caption = output device, e.g. "Headphones") and mute on the speaker icon (Core Audio). It follows default-device changes (E6). Our own changes are tagged, so their echoes are ignored (D9); changes from anywhere else glide the slider. Raising the volume unmutes, like Windows' slider.
+- ✅ **Brightness**, one slider per display, the island's monitor first: the laptop panel via WMI, the Legion 27Q-10 via DDC/CI (low-level VCP 0x10). One worker thread; only the newest value is sent; at most 4 writes/s for DDC/CI and 10/s for WMI, and the final value always lands (`Throttle`, E7/E9). A monitor that doesn't answer gets a disabled slider and "turn on DDC/CI in its menu" (E8). Values are re-read when the panel opens and when displays change (monitors can't announce changes), and the panel rebuilds when a display comes or goes.
+- ✅ **Wi-Fi and Bluetooth** tiles: a click flips at once with a "working" pulse; clicks during switching are merged; it springs back if Windows refuses (D8). They show the real state ("Off in Windows" for airplane mode / disabled adapters, E11), and the Wi-Fi network name ("Connected" if Windows hides it, E10). Right-click opens the Settings page (also for the sliders: sound / display).
 - **Done when:**
-  - The sliders feel instant even though the hardware is slow.
-  - Changes made elsewhere (keyboard volume keys, Quick Settings) show up in the island.
+  - ✅ Built and running on your machine: Headphones, Legion 27Q-10 (DDC/CI works), built-in display (WMI works), Wi-Fi with its network name, Bluetooth.
+  - ✅ `IslandTests --hardware`: a volume change made outside Island reaches it; brightness writes reach both displays (set 99 %/51 %, read back the same), all restored afterwards.
+  - ✅ 135 checks pass (incl. `Throttle`); RAM 33.7 MB, idle CPU 0.0 ms over 30 s, handles steady. Launching Island 5× after the fix: no DWM crash (before: 4 of 7).
+  - ⬜ (you) The sliders *feel* instant while dragging (brightness hardware lags behind on purpose); volume keys and Quick Settings move the island's sliders; toggle Wi-Fi/Bluetooth (I didn't, since that would have cut your connection).
 
 ### Phase 6: Displays
 - List connected monitors by friendly name.
@@ -402,6 +406,7 @@ This comes before any visual polish, so you can leave it running while gaming fr
 | D8 | Toggles feel slow, because Wi-Fi/Bluetooth take 1–2 s to actually switch | The hardware is slow | The toggle flips instantly and shows a subtle "working" shimmer. It springs back only if Windows refuses. Rapid clicks are merged so the radio doesn't flip on/off/on |
 | D9 | A slider jitters while you drag it | Windows reports our own volume change back to us, and that fights the drag | Ignore these echoes while dragging |
 | D10 | Text looks blurry during press animations | Scaling a drawn image blurs it | Keep the press scale subtle (about 5 %); text is always crisp at rest |
+| D11 | **DWM (Windows' compositor) crashes, and the whole screen goes black for a few seconds** | A Windows bug in `dwmcore.dll` (`CNaturalAnimation::SampleInitialValueAndFinalValueIfNecessary`): a spring animation whose target object is released before DWM has read its start value. Happened when the control center was rebuilt right after hidden sliders/toggles had started springs | **Hidden content never animates** (views pass "am I visible?" to every update); a rebuilt view's old layer is hidden and released only after 3 s (`View::Retire`). Fixed and verified 2026-10-24 |
 
 ### E. Features
 | # | What could go wrong | Why | Prevention |
@@ -411,6 +416,7 @@ This comes before any visual polish, so you can leave it running while gaming fr
 | E3 | Progress bar wrong for some apps | Some apps don't report a timeline | Hide the bar when there's no timeline |
 | E4 | Media updates stop after a while | Windows media events are sometimes flaky | Resync on session change and whenever the panel opens |
 | E5 | Random crashes | UI touched from a background thread | Every callback is marshaled to the UI thread |
+| E12 | Island crashes while an app's media session starts or ends | Windows briefly returns *empty* objects (e.g. `GetPlaybackInfo()`), and calling a method on one is a crash, not a catchable error | Every object from the media and network APIs is null-checked. Found from a crash dump on 2026-10-24 |
 | E6 | Volume slider still controls the old device after plugging in headphones | Default device changed | Listen for default-device changes |
 | E7 | Brightness slider feels laggy | WMI takes 50–500 ms and DDC/CI 50–200 ms per call | Background thread, send only the latest value, rate-limit |
 | E8 | External brightness doesn't work | DDC/CI is off in the monitor's menu, or unsupported | Detect it, hide the slider, show a hint |
@@ -483,6 +489,10 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-24 | The control kit demo panel stays available from the tray after Phase 4/5 replace it as the click target |
 | 2026-10-24 | Media: "activity" = starting to play (not metadata updates). When nothing plays, keep the app already shown. The app name in the control center switches apps when several have media |
 | 2026-10-24 | The progress line is a compositor glide that only runs while the panel is visible; no elapsed/remaining times (they'd need a redraw every second) |
+| 2026-10-24 | Hidden content never animates, and replaced visual layers are released 3 s late (works around the DWM crash D11). Every new view must follow this |
+| 2026-10-24 | Brightness: DDC/CI through the low-level VCP calls (no slow capabilities query), max 4 writes/s; WMI for the laptop panel, max 10/s; both re-read when the panel opens instead of listening to WMI events |
+| 2026-10-24 | Volume slider shows 0 while muted; dragging it up unmutes (like Windows) |
+| 2026-10-24 | Tests never click anything but their own windows; visual and media tests are hands-free (poses, silent test player) |
 
 ## 12. Update log
 
@@ -490,6 +500,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 08:35 | **Phase 5 built.** New: `services/AudioService.*`, `services/BrightnessService.*`, `services/RadioService.*`, `services/Throttle.h`; the control center gained volume, brightness per display and the Wi-Fi/Bluetooth tiles; right-click opens Settings pages; `IslandTests --hardware`. **Checked:** Release and Debug build with no warnings; 135 checks pass (incl. 1 %-and-back hardware checks on both displays and the volume); the hands-free visual and media tests pass; 33.7 MB RAM, 0.0 ms idle CPU over 30 s. **Two crashes found in Windows' event log and fixed.** (1) `Island.exe` access violation on 08:04 (during a Phase 4 media test): I rebuilt that exact version, mapped the crash dump's address with a linker map → `MediaService::ReadPlayback` calling into an *empty* object Windows returned while the test player's session started. Every media/network object is now null-checked (E12). (2) **`dwm.exe` crashed 5 times (08:15–08:20)** when the Phase 5 build started: with Microsoft's public symbols the crash is in DWM's spring code (`CNaturalAnimation::SampleInitialValueAndFinalValueIfNecessary`). Cause: the control center was rebuilt right after its hidden sliders/toggles had started springs. Fix: hidden content never animates; replaced layers are released 3 s later (D11). After the fix: 5 launches + all test runs, 0 crashes. Also: Wi-Fi said "Not connected" when Windows hides the name (now "Connected"); a browser replacing its media session no longer makes the island jump to another app. |
 | 2026-10-24 08:06 | **Phase 4 built.** New: `services/MediaService.*`, `services/MediaState.*` (session picking, app names, position, artwork decoding), `views/ControlCenter.*`, `views/Actions.h`, widgets `Artwork`, `ProgressBar`, `TextButton`; idle and Peek views show media; a click now opens the control center (the demo moved to the tray only); `tests/media_test.ps1`, `tests/TestHelpers.cs` (backdrop shrunk to 1000×620). **Checked:** builds with no warnings; 119 unit checks pass; your Spotify session renders with artwork; the silent test player is picked up within ~0.1 s of playing and released correctly; 31 MB RAM, 0.0 ms idle CPU. Found and fixed: `small` is a Windows macro; paused apps flip-flopped as Windows reshuffled its "current" session (now sticky); browser metadata updates stole the island from the app you'd just started (only play-starts count now); a missed event could leave another app's "playing" state stale (re-read on every sync, plus one follow-up look after each change notice). Note: a test run held the island in Peek over your browser's toolbar and caught one of your clicks there. Tests with poses now run as rarely as possible. |
 | 2026-10-24 07:47 | **Phase 3 built.** New: `StateMachine.*`, `render/Graphics.*`, `render/Effects.*`, `render/Motion.*`, `render/Widgets.*`, `render/Glyphs.h`, `views/*` (idle, Peek placeholder, control kit demo), `tests/visual_check.ps1`; `IslandWindow` and `IslandVisuals` rewritten; settings gained `layout`, `glass` and `motion`; tray gained "Control kit demo" and "Keep open (for tuning)"; `--pose`. **Checked:** Release and Debug build with no warnings; 93 unit checks pass; `fullscreen_test.ps1` 8/8 again (slim line 5 px tall); hands-free visual check: screenshots of idle, Peek, control center, demo; morphs ~200–225 ms, 2–4 px overshoot, a reversal never jumps; **25 MB RAM, 0.0 ms idle CPU**. Found and fixed: the compositor refuses the colour-matrix effect unless all its properties are given; `RoundRect`/`DrawText` names clash with old Windows functions; a queued hover timer could open Peek after a window drag; your grey accent made "on" invisible. ⚠ A mouse-driven test run once found its test window behind your Chrome and clicked ~10 times near the middle of the primary screen before I added the "only click our own windows" guard. Those clicks may have landed in your Chrome window, so please check it. Tests that click now refuse to click anything but their own windows, and the visual test no longer clicks at all. **Not yet checked:** the feel by hand, and "transparency effects off" (it would change your desktop). |
 | 2026-10-24 07:03 | **Phase 2 built.** New: `services/FullscreenWatcher.*` (foreground + under-the-island window, scoped move/resize hooks, taskbar `ABN_FULLSCREENAPP`, `SHQueryUserNotificationState`, blocklist), `services/WindowClassifier.*`, `platform/Settings.*` (settings.json, live reload), `platform/Log.*`, `App.*`, `config/settings.json`, `tests/UnitTests.cpp`, `tests/fullscreen_test.ps1`. `IslandWindow` now hides instantly and shows after the delay; the tray menu opens settings and the log. **Checked:** Release and Debug build with no warnings; 32 unit checks pass; all 8 checks of `fullscreen_test.ps1` pass (hide 0–12 ms, show after 507 ms); blocklist hides at once; a broken settings edit keeps the old settings; **idle CPU 0.0 ms over 20 s, 2.0 MB RAM, handle count steady**. Found and fixed: the log file was locked while Island ran. Experiment: cursor-move events are reported by a system thread, not the thread that moved the pointer, so the thread-scoped hooks stay quiet during games. **Not yet checked:** real games and PresentMon (you). |

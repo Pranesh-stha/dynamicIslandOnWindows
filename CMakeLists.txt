@@ -53,9 +53,12 @@ add_library(IslandCore STATIC
     src/platform/Log.cpp
     src/platform/Settings.cpp
     src/platform/Tray.cpp
+    src/services/AudioService.cpp
+    src/services/BrightnessService.cpp
     src/services/FullscreenWatcher.cpp
     src/services/MediaService.cpp
     src/services/MediaState.cpp
+    src/services/RadioService.cpp
     src/services/WindowClassifier.cpp
 )
 island_defaults(IslandCore)
@@ -68,6 +71,8 @@ target_link_libraries(IslandCore PUBLIC
     d2d1 dwrite     # Direct2D (drawing) and DirectWrite (text)
     dxguid          # IDs of the Direct2D effects the glass uses
     windowscodecs   # WIC: decoding album artwork
+    dxva2           # DDC/CI: external monitor brightness
+    wbemuuid        # WMI: laptop panel brightness
 )
 
 # WIN32 = a windowed app (entry point wWinMain, no console window).

@@ -1,5 +1,10 @@
 #pragma once
 
+#include <cstdint>
+#include <vector>
+
+#include <winrt/Windows.System.h>
+
 #include "render/Widgets.h"
 
 // One of the things the island shows: the idle pill's content, the Peek
@@ -33,7 +38,8 @@ protected:
     // progress bar only while it can be seen.
     virtual void OnVisibilityChanged(bool /*visible*/) {}
 
-    // Replaces the old layer with a fresh, empty one of this size.
+    // Replaces the old layer with a fresh, empty one of this size. The old
+    // one is hidden at once and released a few seconds later (see Retire).
     void ResetLayer(float width, float height);
     // For views whose height follows their content: set it once laid out.
     void SetHeight(float height);
@@ -45,4 +51,17 @@ protected:
     float m_width = 0.0f;
     float m_height = 0.0f;
     bool m_visible = false;
+
+private:
+    struct Retired
+    {
+        winrt::Windows::UI::Composition::ContainerVisual layer{ nullptr };
+        uint64_t at = 0;
+    };
+
+    void Retire(const winrt::Windows::UI::Composition::ContainerVisual& layer);
+    void Sweep();
+
+    std::vector<Retired> m_retired;
+    winrt::Windows::System::DispatcherQueueTimer m_sweep{ nullptr };
 };

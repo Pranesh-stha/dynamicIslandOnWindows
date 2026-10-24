@@ -47,6 +47,13 @@ int PickSession(const std::vector<SessionSummary>& sessions, int manualChoice, i
     {
         return shown;
     }
+    for (int i = 0; i < count; ++i)
+    {
+        if (sessions[i].sameAppAsShown)
+        {
+            return i;
+        }
+    }
     for (int i = 0; i < static_cast<int>(sessions.size()); ++i)
     {
         if (sessions[i].windowsCurrent)

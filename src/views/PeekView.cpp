@@ -92,7 +92,7 @@ void PeekView::SetMedia(const MediaState& media)
     m_media = media;
     if (m_layer)
     {
-        Apply(true);
+        Apply(Visible());  // hidden content never animates: see View::Retire
     }
 }
 
@@ -126,5 +126,5 @@ void PeekView::Apply(bool animate)
     const float textX = m_art->Visual().Offset().x + m_art->Size() + m_ui.Px(10.0f);
     PlaceLines(*m_title, *m_subtitle, textX, m_height);
     m_art->SetImage(m_media.artwork.get(), m_media.artwork ? m_media.artworkTrackId : 0);
-    m_playPause->SetGlyph(m_media.playing ? Glyph::Pause : Glyph::Play, /*morph*/ true);
+    m_playPause->SetGlyph(m_media.playing ? Glyph::Pause : Glyph::Play, /*morph*/ true, animate);
 }

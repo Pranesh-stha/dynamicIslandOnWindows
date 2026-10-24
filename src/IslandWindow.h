@@ -16,7 +16,10 @@
 #include "render/Graphics.h"
 #include "render/IslandVisuals.h"
 #include "render/Widgets.h"
+#include "services/AudioService.h"
+#include "services/BrightnessService.h"
 #include "services/MediaState.h"
+#include "services/RadioService.h"
 #include "views/Actions.h"
 
 class View;
@@ -61,9 +64,15 @@ public:
     // Called after every state change (e.g. to re-sync media when it opens).
     void OnStateChanged(std::function<void(IslandState)> handler) { m_onStateChanged = std::move(handler); }
 
-    // What's playing. While hidden this is only stored: nothing is redrawn
-    // until the island comes back.
+    // Called after displays are plugged in, unplugged or rearranged.
+    void OnDisplaysChanged(std::function<void()> handler) { m_onDisplaysChanged = std::move(handler); }
+
+    // What the services report. While hidden this is only stored: nothing is
+    // redrawn until the island comes back.
     void SetMedia(const MediaState& media);
+    void SetAudio(const AudioState& audio);
+    void SetBrightness(const BrightnessState& brightness);
+    void SetRadios(const RadiosState& radios);
 
     // Opens the panel with one of every control (tray menu).
     void OpenControlKitDemo();
@@ -105,6 +114,7 @@ private:
     void ResizeWindow(float width, float height);
     void ShowNow();
     void PushMedia();
+    void PushQuickControls();
     Motion::float2 ToLayer(POINT point, const View& view) const;
 
     HWND m_hwnd{};
@@ -128,7 +138,11 @@ private:
 
     IslandActions m_actions;
     MediaState m_media;
+    AudioState m_audio;
+    BrightnessState m_brightness;
+    RadiosState m_radios;
     std::function<void(IslandState)> m_onStateChanged;
+    std::function<void()> m_onDisplaysChanged;
 
     winrt::Windows::UI::ViewManagement::UISettings m_uiSettings{ nullptr };
     winrt::event_token m_effectsChangedToken{};

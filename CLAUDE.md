@@ -20,4 +20,6 @@
   - Hide whenever anything is fullscreen on the primary monitor.
   - No injection, no global input hooks, no handles to game processes.
 - **Build only with MSVC through the presets:** `cmake --preset default`, then `cmake --build --preset debug` or `release`. MinGW g++ is on PATH and must not be used.
+- **Compositor rule (PLAN.md risk D11):** content that isn't visible never animates, and replaced visual layers are released late (`View::Retire`). Breaking this crashed DWM and blanked the user's screen.
+- **Testing:** run `ctest`, then the hands-free scripts in `tests/`. The user may be working at the PC: never click anything but the test's own windows, and check Windows' Application log (event 1000) for Island or `dwm.exe` crashes after test runs.
 - The user is new to Windows app development. Explain new concepts in plain words.

@@ -44,7 +44,7 @@ void IdleView::SetMedia(const MediaState& media)
     m_media = media;
     if (m_layer)
     {
-        Apply(true);
+        Apply(Visible());  // hidden content never animates: see View::Retire
     }
 }
 

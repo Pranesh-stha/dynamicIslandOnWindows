@@ -77,6 +77,7 @@ private:
     winrt::event_token m_sessionsToken{}, m_currentToken{};
     std::vector<Tracked> m_sessions;
     Session m_shown{ nullptr };
+    std::wstring m_shownApp;  // app id of the session shown, kept after it goes away
     Session m_manualChoice{ nullptr };
     uint64_t m_propertiesGeneration = 0;
     uint64_t m_artworkLoadingFor = 0;

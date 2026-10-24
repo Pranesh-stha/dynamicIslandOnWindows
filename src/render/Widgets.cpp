@@ -337,15 +337,7 @@ void IconButton::OnClick()
     }
 }
 
-void IconButton::OnRightClick()
-{
-    if (onRightClick)
-    {
-        onRightClick();
-    }
-}
-
-void IconButton::SetGlyph(wchar_t glyph, bool morph)
+void IconButton::SetGlyph(wchar_t glyph, bool morph, bool animate)
 {
     if (glyph == m_glyph)
     {
@@ -362,6 +354,22 @@ void IconButton::SetGlyph(wchar_t glyph, bool morph)
     const auto in = next.Visual();
     const auto out = m_glyphs[outgoing]->Visual();
     const Spring& spring = m_ui.motion->toggle;
+
+    if (!animate)
+    {
+        for (const auto& visual : { in, out })
+        {
+            visual.StopAnimation(L"Opacity");
+            visual.StopAnimation(L"Scale");
+            visual.StopAnimation(L"RotationAngleInDegrees");
+            visual.Scale({ 1.0f, 1.0f, 1.0f });
+            visual.RotationAngleInDegrees(0.0f);
+        }
+        in.Opacity(RestingGlyphOpacity());
+        out.Opacity(0.0f);
+        m_hiddenAt[outgoing] = 0;
+        return;
+    }
 
     // If the incoming icon finished leaving a while ago, start it turned back
     // and small. If it's still on its way out (fast double clicks), it simply
@@ -572,14 +580,6 @@ void ToggleTile::OnClick()
     if (onToggle)
     {
         onToggle(m_isOn);
-    }
-}
-
-void ToggleTile::OnRightClick()
-{
-    if (onRightClick)
-    {
-        onRightClick();
     }
 }
 

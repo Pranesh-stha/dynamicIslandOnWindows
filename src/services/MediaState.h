@@ -48,6 +48,7 @@ struct SessionSummary
     bool playing = false;
     int64_t lastActivity = 0;     // when it last started playing
     bool windowsCurrent = false;  // the one Windows itself would show
+    bool sameAppAsShown = false;  // from the app shown until now (browsers replace their sessions)
 };
 
 // Which session the island shows (PLAN.md E1), by index:
@@ -55,7 +56,9 @@ struct SessionSummary
 //   2. one that is playing (the most recently active);
 //   3. the one already shown, if nothing is playing: paused apps don't
 //      take turns as Windows reshuffles them;
-//   4. the one Windows itself shows, else the most recently active.
+//   4. if that one just went away, another from the same app (browsers
+//      replace their session now and then);
+//   5. the one Windows itself shows, else the most recently active.
 // Returns -1 when there are none. Pass -1 for "no manual choice" / "nothing shown".
 int PickSession(const std::vector<SessionSummary>& sessions, int manualChoice, int shown);
 

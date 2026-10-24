@@ -24,11 +24,15 @@ namespace
         return static_cast<int64_t>(GetTickCount64());
     }
 
+    // Windows sometimes returns empty objects while an app's session starts
+    // or ends. Calling anything on an empty object crashes (it isn't an
+    // error we can catch), so every object is checked before use.
     bool IsPlaying(const wmc::GlobalSystemMediaTransportControlsSession& session)
     {
         try
         {
-            return session.GetPlaybackInfo().PlaybackStatus() == PlaybackStatus::Playing;
+            const auto info = session ? session.GetPlaybackInfo() : nullptr;
+            return info && info.PlaybackStatus() == PlaybackStatus::Playing;
         }
         catch (const winrt::hresult_error&)
         {
@@ -137,6 +141,10 @@ void MediaService::SyncSessions(bool reloadProperties)
     try
     {
         const auto sessions = m_manager.GetSessions();
+        if (!sessions)
+        {
+            return;
+        }
         auto present = [&](const Session& session)
         {
             for (const auto& candidate : sessions)
@@ -292,7 +300,15 @@ void MediaService::Update(bool reloadProperties)
     for (size_t i = 0; i < m_sessions.size(); ++i)
     {
         const Tracked& tracked = m_sessions[i];
-        summaries.push_back({ tracked.playing, tracked.lastActivity, windowsCurrent && tracked.session == windowsCurrent });
+        bool sameApp = false;
+        try
+        {
+            sameApp = !m_shownApp.empty() && tracked.session.SourceAppUserModelId() == m_shownApp;
+        }
+        catch (const winrt::hresult_error&)
+        {
+        }
+        summaries.push_back({ tracked.playing, tracked.lastActivity, windowsCurrent && tracked.session == windowsCurrent, sameApp });
         if (m_manualChoice && tracked.session == m_manualChoice)
         {
             manualIndex = static_cast<int>(i);
@@ -306,6 +322,16 @@ void MediaService::Update(bool reloadProperties)
     const Session session = chosen >= 0 ? m_sessions[chosen].session : nullptr;
     const bool switched = session != m_shown;
     m_shown = session;
+    if (session)
+    {
+        try
+        {
+            m_shownApp = session.SourceAppUserModelId();
+        }
+        catch (const winrt::hresult_error&)
+        {
+        }
+    }
 
     if (!session)
     {
@@ -351,17 +377,29 @@ void MediaService::Update(bool reloadProperties)
 
 void MediaService::ReadPlayback(const Session& session)
 {
+    // Any of these can be empty while the app's session starts or ends (see IsPlaying).
     const auto info = session.GetPlaybackInfo();
-    const auto controls = info.Controls();
+    if (!info)
+    {
+        return;
+    }
     m_state.playing = info.PlaybackStatus() == PlaybackStatus::Playing;
-    m_state.canPlayPause = controls.IsPlayPauseToggleEnabled() || controls.IsPlayEnabled() || controls.IsPauseEnabled();
-    m_state.canNext = controls.IsNextEnabled();
-    m_state.canPrevious = controls.IsPreviousEnabled();
+    if (const auto controls = info.Controls())
+    {
+        m_state.canPlayPause = controls.IsPlayPauseToggleEnabled() || controls.IsPlayEnabled() || controls.IsPauseEnabled();
+        m_state.canNext = controls.IsNextEnabled();
+        m_state.canPrevious = controls.IsPreviousEnabled();
+    }
     const auto rate = info.PlaybackRate();
     m_state.rate = rate ? rate.Value() : 1.0;
 
     // Where the song is: the position at the moment the app last reported it.
     const auto timeline = session.GetTimelineProperties();
+    if (!timeline)
+    {
+        m_state.hasTimeline = false;
+        return;
+    }
     using seconds = std::chrono::duration<double>;
     const double start = std::chrono::duration_cast<seconds>(timeline.StartTime()).count();
     const double end = std::chrono::duration_cast<seconds>(timeline.EndTime()).count();

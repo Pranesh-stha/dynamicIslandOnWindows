@@ -117,7 +117,10 @@ public:
     virtual void OnPointerDrag(float /*x*/, float /*y*/) {}
     virtual void OnPointerUp(bool inside) { if (inside) OnClick(); }
     virtual void OnClick() {}
-    virtual void OnRightClick() {}
+    virtual void OnRightClick() { if (onRightClick) onRightClick(); }
+
+    // What a right-click does (e.g. open the matching Settings page).
+    std::function<void()> onRightClick;
     virtual bool OnWheel(float /*notches*/) { return false; }
     virtual bool KeepsPressOutside() const { return false; }  // sliders keep dragging outside
 
@@ -167,16 +170,15 @@ public:
     IconButton(const Ui& ui, wchar_t glyph, float diameterDip, float glyphDip);
 
     // morph = true: the old icon turns and shrinks away while the new one
-    // turns in (play <-> pause). Otherwise a plain crossfade.
-    void SetGlyph(wchar_t glyph, bool morph);
+    // turns in (play <-> pause). Otherwise a plain crossfade. With animate =
+    // false the new icon just appears (for content that isn't visible).
+    void SetGlyph(wchar_t glyph, bool morph, bool animate = true);
 
     std::function<void()> onClick;
-    std::function<void()> onRightClick;
 
     void OnHoverChanged(bool hovered) override;
     void OnPressChanged(bool pressed) override;
     void OnClick() override;
-    void OnRightClick() override;
 
 protected:
     void Layout() override;
@@ -238,12 +240,10 @@ public:
     void SetBusy(bool busy) { m_switch.SetBusy(busy); }
 
     std::function<void(bool on)> onToggle;
-    std::function<void()> onRightClick;
 
     void OnHoverChanged(bool hovered) override;
     void OnPressChanged(bool pressed) override;
     void OnClick() override;
-    void OnRightClick() override;
 
 protected:
     void Layout() override;
