@@ -90,9 +90,12 @@ float DisplaysSection::Build(const wuc::ContainerVisual& layer, ControlHost& con
     {
         y = AddTitle(layer, L"Project", x, y + m_ui.Px(4.0f));
         const float rowHeight = m_ui.Px(32.0f);
+        m_spotlight = std::make_unique<Spotlight>(m_ui);
+        layer.Children().InsertAtTop(m_spotlight->Visual());
         for (int i = 0; i < kModes; ++i)
         {
             m_modes[i] = std::make_unique<ListRow>(m_ui);
+            m_modes[i]->SetSpotlight(m_spotlight.get());
             m_modes[i]->SetBounds(x, y, width, rowHeight);
             const Projection projection = kModeList[i].projection;
             m_modes[i]->onClick = [this, projection] { if (m_actions.setProjection) m_actions.setProjection(projection); };
@@ -135,6 +138,10 @@ bool DisplaysSection::SetDisplays(const DisplaysState& displays, bool animate)
 void DisplaysSection::OnVisibilityChanged(bool visible)
 {
     m_visible = visible;
+    if (!visible && m_spotlight)
+    {
+        m_spotlight->Hide();
+    }
     Apply(false);  // stops the "switching" pulse while hidden
 }
 

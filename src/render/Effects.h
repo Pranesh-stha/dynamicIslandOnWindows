@@ -16,6 +16,12 @@ namespace Effects
     winrt::Windows::UI::Composition::CompositionBrush CreateBackdropBrush(
         const winrt::Windows::UI::Composition::Compositor& compositor, float saturation, float brightness);
 
+    // Clear glass: `source` (a live copy of the screen behind) blurred by
+    // `blurPx` (0 = sharp) and then colour-boosted like CreateBackdropBrush.
+    winrt::Windows::UI::Composition::CompositionBrush CreateClearGlassBrush(
+        const winrt::Windows::UI::Composition::Compositor& compositor,
+        const winrt::Windows::UI::Composition::CompositionBrush& source, float blurPx, float saturation, float brightness);
+
     // Repeats a small image endlessly in both directions (for the grain texture).
     winrt::Windows::UI::Composition::CompositionBrush CreateTiledBrush(
         const winrt::Windows::UI::Composition::Compositor& compositor,

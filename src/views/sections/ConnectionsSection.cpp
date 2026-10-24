@@ -72,12 +72,16 @@ float ConnectionsSection::Build(const wuc::ContainerVisual& layer, ControlHost& 
     Add(layer, controls, *m_bluetoothTile);
     y += tileHeight + ui.Px(10.0f);
 
-    // The list: a few rows made once and filled as things change, and a footer.
+    // The list: a few rows made once and filled as things change, and a
+    // footer, with one hover highlight that glides between them.
+    m_spotlight = std::make_unique<Spotlight>(ui);
+    layer.Children().InsertAtTop(m_spotlight->Visual());
     const float rowHeight = ui.Px(36.0f);
     const float rowGap = ui.Px(2.0f);
     for (int i = 0; i < kRows; ++i)
     {
         m_rows[i] = std::make_unique<ListRow>(ui);
+        m_rows[i]->SetSpotlight(m_spotlight.get());
         m_rows[i]->SetBounds(x, y, width, rowHeight);
         m_rows[i]->onClick = [this, i] { OnRowClicked(i); };
         m_rows[i]->onRightClick = [this]
@@ -91,6 +95,7 @@ float ConnectionsSection::Build(const wuc::ContainerVisual& layer, ControlHost& 
         y += rowHeight + rowGap;
     }
     m_footer = std::make_unique<ListRow>(ui);
+    m_footer->SetSpotlight(m_spotlight.get());
     m_footer->SetBounds(x, y, width, rowHeight);
     m_footer->onClick = [this]
     {
@@ -145,6 +150,10 @@ void ConnectionsSection::OnVisibilityChanged(bool visible)
     if (m_rescan)
     {
         m_rescan.Stop();
+    }
+    if (m_spotlight)
+    {
+        m_spotlight->Hide();
     }
     if (m_list == List::AddDevice)
     {

@@ -249,6 +249,9 @@ bool ParseSettings(std::wstring_view text, Settings& out, std::wstring& message)
 
         GlassSettings& g = out.glass;
         const Reader glass = settings.Child(L"glass");
+        glass.String(L"style", g.style);
+        glass.Number(L"blur", g.blur, 0.0f, 40.0f);
+        glass.Number(L"refraction", g.refraction, 0.0f, 3.0f);
         glass.Number(L"tintOpacity", g.tintOpacity, 0.0f, 1.0f);
         glass.Number(L"saturation", g.saturation, 0.0f, 3.0f);
         glass.Number(L"brightness", g.brightness, 0.2f, 2.0f);

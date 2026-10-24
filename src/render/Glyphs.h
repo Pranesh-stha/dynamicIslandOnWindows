@@ -45,7 +45,7 @@ namespace Glyph
     constexpr wchar_t Mic = 0xE720;
     constexpr wchar_t MicOff = 0xF781;
     constexpr wchar_t NightLight = 0xE708;    // a crescent moon
-    constexpr wchar_t EnergySaver = 0xE8BE;   // a leaf
+    constexpr wchar_t KeepAwake = 0xEC32;     // a coffee cup
     constexpr wchar_t Duplicate = 0xE8C8;     // two overlapping squares
     constexpr wchar_t Extend = 0xEBC6;        // two screens side by side
     constexpr wchar_t Monitor = 0xE7F4;

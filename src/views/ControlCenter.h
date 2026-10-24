@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "services/AudioService.h"
 #include "services/BluetoothService.h"
@@ -21,7 +22,7 @@
 
 // The full panel a click opens: a wide, horizontal layout.
 //
-//   10:42  Saturday, 24 October   (Mic) (Night light) (Energy saver)   [battery] 84 %  2 h left
+//   10:42  Saturday, 24 October   (Mic) (Night light) (Keep awake)   [battery] 84 %  2 h left
 //   ----------------------------------------------------------------------------------
 //   Now playing     |  Sound            |  Displays        |  Connections
 //   artwork, song   |  main volume      |  brightness      |  Wi-Fi / Bluetooth
@@ -48,6 +49,7 @@ public:
         m_status.SetAudio(audio, Visible());
     }
     void SetNightLight(const NightLightState& nightLight) { m_status.SetNightLight(nightLight, Visible()); }
+    void SetKeepAwake(bool on) { m_status.SetKeepAwake(on, Visible()); }
     void SetRadios(const RadiosState& radios) { m_connections.SetRadios(radios, Visible()); }
     void SetWifi(const WifiState& wifi) { m_connections.SetWifi(wifi, Visible()); }
     void SetBluetooth(const BluetoothState& bluetooth) { m_connections.SetBluetooth(bluetooth, Visible()); }
@@ -60,6 +62,7 @@ public:
 
 protected:
     void OnVisibilityChanged(bool visible) override;
+    void OnAppear() override;
 
 private:
     // Hidden content never animates (see View::Retire): every update passes
@@ -70,4 +73,7 @@ private:
     DisplaysSection m_displays;
     ConnectionsSection m_connections;
     std::unique_ptr<RoundedRect> m_divider;
+    // The header and each column have their own layer (at offset 0, so the
+    // controls' coordinates don't change), for the entrance.
+    std::vector<winrt::Windows::UI::Composition::ContainerVisual> m_parts;
 };

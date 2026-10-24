@@ -296,10 +296,33 @@ protected:
     void Layout() override;
 
 private:
+    float FullBloom() const;
+
     RoundedRect m_background, m_onLayer, m_hoverLayer;
+    winrt::Windows::UI::Composition::CompositionEllipseGeometry m_bloom{ nullptr };  // the "on" colour spreads from the icon
     Label m_icon, m_label;
     bool m_on = false;
     bool m_busy = false;
+};
+
+// One hover highlight shared by the rows of a list: it glides from row to
+// row with the mouse instead of each row lighting up on its own (like macOS
+// menus). Rows report hover to it (ListRow::SetSpotlight).
+class Spotlight
+{
+public:
+    explicit Spotlight(const Ui& ui);
+
+    winrt::Windows::UI::Composition::ShapeVisual Visual() const { return m_rect.visual; }
+    void MoveTo(float x, float y, float width, float height);  // the mouse entered a row
+    void Leave();                                               // ...and left it
+    void Hide();                                                // at once (the list is being hidden)
+
+private:
+    const Ui& m_ui;
+    RoundedRect m_rect;
+    bool m_shown = false;
+    uint64_t m_leftAt = 0;
 };
 
 // One line of a list (a Wi-Fi network, a Bluetooth device, "Add a
@@ -314,6 +337,7 @@ public:
     void SetContent(wchar_t glyph, std::wstring_view title, std::wstring_view detail, wchar_t trailing, bool active, bool animate);
     void SetBusy(bool busy);                  // a gentle pulse while something is in progress
     void SetShown(bool shown, bool animate);  // hidden rows don't take the mouse
+    void SetSpotlight(Spotlight* spotlight) { m_spotlight = spotlight; }  // the list's shared highlight instead of the row's own
 
     std::function<void()> onClick;
 
@@ -329,6 +353,7 @@ private:
 
     RoundedRect m_highlight, m_iconOff, m_iconOn;
     Label m_icon, m_title, m_detail, m_trailing;
+    Spotlight* m_spotlight = nullptr;
     bool m_active = false;
     bool m_busy = false;
 };
@@ -403,13 +428,19 @@ private:
     float ValueAt(float x) const;
     void Show(float value, bool animate);
     void UpdateLook();
+    void UpdateBubble();
 
     winrt::Windows::UI::Composition::CompositionPropertySet m_properties{ nullptr };
     winrt::Windows::UI::Composition::ContainerVisual m_track{ nullptr };
     winrt::Windows::UI::Composition::CompositionRoundedRectangleGeometry m_trackShape{ nullptr };
     winrt::Windows::UI::Composition::SpriteVisual m_trackBackground{ nullptr };
     winrt::Windows::UI::Composition::SpriteVisual m_fill{ nullptr };
-    float m_thin, m_thick;
+    // While dragging: a little pill above the end of the fill with the value ("72 %").
+    winrt::Windows::UI::Composition::ContainerVisual m_bubble{ nullptr };
+    RoundedRect m_bubbleBackground;
+    Label m_bubbleText;
+    int m_bubbleValue = -1;
+    float m_thin, m_thick, m_drag;
     float m_value = 0.0f;
     bool m_dragging = false;
     bool m_hovered = false;

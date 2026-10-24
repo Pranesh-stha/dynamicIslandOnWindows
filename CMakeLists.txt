@@ -41,6 +41,7 @@ add_library(IslandCore STATIC
     src/IslandWindow.cpp
     src/StateMachine.cpp
     src/render/Effects.cpp
+    src/render/GlassCapture.cpp
     src/render/Graphics.cpp
     src/render/IslandVisuals.cpp
     src/render/Motion.cpp
@@ -62,6 +63,7 @@ add_library(IslandCore STATIC
     src/services/BluetoothService.cpp
     src/services/BrightnessService.cpp
     src/services/FullscreenWatcher.cpp
+    src/services/KeepAwake.cpp
     src/services/MediaService.cpp
     src/services/MediaState.cpp
     src/services/DisplayService.cpp

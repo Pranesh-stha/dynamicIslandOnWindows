@@ -42,9 +42,9 @@ namespace Motion
     using winrt::Windows::Foundation::Numerics::float3;
     using winrt::Windows::UI::Composition::CompositionObject;
 
-    void SpringTo(const CompositionObject& target, const wchar_t* property, float value, const Spring& spring);
-    void SpringTo(const CompositionObject& target, const wchar_t* property, float2 value, const Spring& spring);
-    void SpringTo(const CompositionObject& target, const wchar_t* property, float3 value, const Spring& spring);
+    void SpringTo(const CompositionObject& target, const wchar_t* property, float value, const Spring& spring, int delayMs = 0);
+    void SpringTo(const CompositionObject& target, const wchar_t* property, float2 value, const Spring& spring, int delayMs = 0);
+    void SpringTo(const CompositionObject& target, const wchar_t* property, float3 value, const Spring& spring, int delayMs = 0);
 
     // A smooth ease-out over a fixed time. Used for fades.
     void EaseTo(const CompositionObject& target, const wchar_t* property, float value, int durationMs, int delayMs = 0);

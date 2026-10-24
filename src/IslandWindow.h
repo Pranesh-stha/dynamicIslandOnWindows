@@ -13,6 +13,7 @@
 #include "AppMessages.h"
 #include "StateMachine.h"
 #include "platform/Settings.h"
+#include "render/GlassCapture.h"
 #include "render/Graphics.h"
 #include "render/IslandVisuals.h"
 #include "render/Widgets.h"
@@ -50,7 +51,8 @@ public:
     ~IslandWindow();
 
     // Creates the window hidden; SetFullscreenHidden(false) shows it.
-    bool Create(HINSTANCE instance);
+    // `glassSnapshot`: tests only (see GlassCapture).
+    bool Create(HINSTANCE instance, bool glassSnapshot = false);
     void ApplySettings(const Settings& settings);
 
     // Something fullscreen covers the primary monitor. Hiding is instant;
@@ -82,6 +84,7 @@ public:
     void SetBluetooth(const BluetoothState& bluetooth);
     void SetPower(const PowerState& power);
     void SetNightLight(const NightLightState& nightLight);
+    void SetKeepAwake(bool on);
     void SetDisplays(const DisplaysState& displays);
 
     // Opens the panel with one of every control (tray menu).
@@ -123,6 +126,7 @@ private:
     bool SlimLine() const;  // idle shows the slim line (a maximized window is under it)
     void ShowState(bool animate);
     void ResizeWindow(float width, float height);
+    void UpdateGlass();  // clear glass on/off and the screen strip it copies
     Motion::float2 StripSize() const;  // the window while tucked away
     void ShowNow();
     void PushMedia();
@@ -135,6 +139,7 @@ private:
     winrt::Windows::System::DispatcherQueue m_queue{ nullptr };
     Graphics m_graphics;
     IslandVisuals m_visuals;
+    GlassCapture m_capture;
     Ui m_ui;
     StateMachine m_machine;
 
@@ -158,6 +163,7 @@ private:
     BluetoothState m_bluetooth;
     PowerState m_power;
     NightLightState m_nightLight;
+    bool m_keepAwake = false;
     DisplaysState m_displays;
     std::function<void(IslandState)> m_onStateChanged;
     std::function<void()> m_onDisplaysChanged;

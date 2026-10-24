@@ -14,10 +14,14 @@ namespace
     }
 
     template <typename Animation>
-    void Configure(Animation& animation, const Spring& spring)
+    void Configure(Animation& animation, const Spring& spring, int delayMs)
     {
         animation.DampingRatio(std::clamp(spring.dampingRatio, 0.05f, 2.0f));
         animation.Period(Milliseconds(spring.periodMs));
+        if (delayMs > 0)
+        {
+            animation.DelayTime(Milliseconds(static_cast<float>(delayMs)));
+        }
     }
 
     wuc::CubicBezierEasingFunction EaseOut(const wuc::Compositor& compositor)
@@ -27,26 +31,26 @@ namespace
     }
 }
 
-void Motion::SpringTo(const CompositionObject& target, const wchar_t* property, float value, const Spring& spring)
+void Motion::SpringTo(const CompositionObject& target, const wchar_t* property, float value, const Spring& spring, int delayMs)
 {
     auto animation = target.Compositor().CreateSpringScalarAnimation();
-    Configure(animation, spring);
+    Configure(animation, spring, delayMs);
     animation.FinalValue(value);
     target.StartAnimation(property, animation);
 }
 
-void Motion::SpringTo(const CompositionObject& target, const wchar_t* property, float2 value, const Spring& spring)
+void Motion::SpringTo(const CompositionObject& target, const wchar_t* property, float2 value, const Spring& spring, int delayMs)
 {
     auto animation = target.Compositor().CreateSpringVector2Animation();
-    Configure(animation, spring);
+    Configure(animation, spring, delayMs);
     animation.FinalValue(value);
     target.StartAnimation(property, animation);
 }
 
-void Motion::SpringTo(const CompositionObject& target, const wchar_t* property, float3 value, const Spring& spring)
+void Motion::SpringTo(const CompositionObject& target, const wchar_t* property, float3 value, const Spring& spring, int delayMs)
 {
     auto animation = target.Compositor().CreateSpringVector3Animation();
-    Configure(animation, spring);
+    Configure(animation, spring, delayMs);
     animation.FinalValue(value);
     target.StartAnimation(property, animation);
 }

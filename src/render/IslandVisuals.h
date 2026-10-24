@@ -31,9 +31,14 @@ struct IslandShape
 //
 //   root                  fills the window
 //   └─ pill               centered at the top; its size is the morphing outline
-//        ├─ glass         blurred, colour-boosted copy of what's behind
+//        ├─ glass         frosted: Windows' heavily blurred copy of what's behind
+//        ├─ clear         clear glass (when GlassCapture works), over the frosted:
+//        │    ├─ view     the live screen behind, lightly blurred, colour-boosted
+//        │    └─ lens     a ring along the edge showing what's just beyond it,
+//        │                bent inwards and a little brighter, like thick glass
 //        ├─ tint          dark layer for contrast
 //        ├─ grain         faint noise, hides banding in the blur
+//        ├─ sheen         a soft gloss at the top, like light on glass
 //        ├─ content       what the views show (Idle / Peek / Expanded layers)
 //        └─ rim           thin light edge along the outline
 //
@@ -59,9 +64,17 @@ public:
     // Fades the whole island in or out (out = tucked away above the top edge).
     void SetPresent(bool present, bool animate);
 
+    // Clear glass: `capture` is a live copy of the top of the screen,
+    // `regionWidth` pixels wide and centred on the island (GlassCapture).
+    void SetClearSource(const winrt::Windows::UI::Composition::ICompositionSurface& capture, float regionWidth);
+    // Shown once the copy has content; the frosted glass shows until then.
+    void ShowClear(bool shown, bool animate);
+
 private:
     void FollowPill(const winrt::Windows::UI::Composition::CompositionRoundedRectangleGeometry& geometry);
     void CreateGrain(Graphics& graphics);
+    void BuildClear();
+    winrt::Windows::UI::Composition::ExpressionAnimation Follow(const wchar_t* formula) const;
 
     winrt::Windows::UI::Composition::Compositor m_compositor{ nullptr };
     winrt::Windows::UI::Composition::Desktop::DesktopWindowTarget m_target{ nullptr };
@@ -71,6 +84,16 @@ private:
     winrt::Windows::UI::Composition::SpriteVisual m_glass{ nullptr };
     winrt::Windows::UI::Composition::SpriteVisual m_tint{ nullptr };
     winrt::Windows::UI::Composition::SpriteVisual m_grain{ nullptr };
+    winrt::Windows::UI::Composition::ContainerVisual m_clearGroup{ nullptr };
+    winrt::Windows::UI::Composition::SpriteVisual m_clear{ nullptr };
+    winrt::Windows::UI::Composition::SpriteVisual m_lens{ nullptr };
+    winrt::Windows::UI::Composition::SpriteVisual m_sheen{ nullptr };
+    winrt::Windows::UI::Composition::ShapeVisual m_ring{ nullptr };  // the lens's mask, drawn off-screen
+    winrt::Windows::UI::Composition::CompositionVisualSurface m_ringSurface{ nullptr };
+    winrt::Windows::UI::Composition::ICompositionSurface m_clearSource{ nullptr };
+    float m_regionWidth = 0.0f;
+    bool m_clearStyle = false;
+    float m_blur = 0.0f, m_refraction = 0.0f, m_saturation = 1.0f, m_brightness = 1.0f, m_scale = 1.0f;
     winrt::Windows::UI::Composition::ShapeVisual m_rim{ nullptr };
     winrt::Windows::UI::Composition::CompositionSpriteShape m_rimShape{ nullptr };
     winrt::Windows::UI::Composition::CompositionPropertySet m_properties{ nullptr };

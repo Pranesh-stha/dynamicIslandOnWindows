@@ -34,7 +34,9 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
 {
     m_settings.Load();
 
-    if (!m_island.Create(instance) ||
+    // Tests only: clear glass from one snapshot, so test screenshots can see the island.
+    const bool glassSnapshot = commandLine.find(L"--glass-snapshot") != std::wstring_view::npos;
+    if (!m_island.Create(instance, glassSnapshot) ||
         !m_tray.Create(instance, [this] { return BuildTrayMenu(); }))
     {
         return false;
@@ -77,6 +79,11 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
         }
     };
     actions.setProjection = [this](Projection projection) { m_displays.SetProjection(projection); };
+    actions.setKeepAwake = [this](bool on)
+    {
+        m_keepAwake.Set(on);
+        m_island.SetKeepAwake(m_keepAwake.On());
+    };
     actions.setBrightness = [this](const std::wstring& display, float value) { m_brightness.Set(display, value); };
     actions.setWifi = [this](bool on) { m_radios.SetWifi(on); };
     actions.setBluetooth = [this](bool on) { m_radios.SetBluetooth(on); };

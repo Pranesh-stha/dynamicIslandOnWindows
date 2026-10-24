@@ -42,13 +42,11 @@ float StatusSection::Build(const wuc::ContainerVisual& layer, ControlHost& contr
         }
     };
     m_nightLightChip->onRightClick = [this] { if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:nightlight"); };
-    m_energySaver = std::make_unique<ToggleChip>(m_ui, Glyph::EnergySaver, L"Energy saver");
-    // Windows has no public way for an app to switch energy saver (its own
-    // Settings page uses internal calls), so this one shows the state and
-    // opens Settings > Energy saver, where the switch is.
-    m_energySaver->onClick = [this] { if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:batterysaver"); };
-    m_energySaver->onRightClick = m_energySaver->onClick;
-    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_energySaver.get() })
+    // Keeps the PC from sleeping and the screen on (PowerToys Awake style).
+    m_keepAwakeChip = std::make_unique<ToggleChip>(m_ui, Glyph::KeepAwake, L"Keep awake");
+    m_keepAwakeChip->onClick = [this] { if (m_actions.setKeepAwake) m_actions.setKeepAwake(!m_keepAwake); };
+    m_keepAwakeChip->onRightClick = [this] { if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:powersleep"); };
+    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_keepAwakeChip.get() })
     {
         Add(layer, controls, *chip);
     }
@@ -70,13 +68,13 @@ void StatusSection::ArrangeChips()
     const float height = m_ui.EvenPx(32.0f);
     const float gap = m_ui.Px(8.0f);
     float total = -gap;
-    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_energySaver.get() })
+    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_keepAwakeChip.get() })
     {
         total += chip->NaturalWidth() + gap;
     }
     float x = std::round(m_x + (m_width - total) / 2.0f);
     const float y = std::round(m_y + (m_time->Height() - height) / 2.0f);
-    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_energySaver.get() })
+    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_keepAwakeChip.get() })
     {
         chip->SetBounds(x, y, chip->NaturalWidth(), height);
         x += chip->NaturalWidth() + gap;
@@ -93,8 +91,7 @@ void StatusSection::ApplyChips(bool animate)
     m_mic->SetGlyph(m_audio.micMuted ? Glyph::MicOff : Glyph::Mic);
     m_mic->SetOn(m_audio.micMuted, animate);
     m_nightLightChip->SetOn(m_nightLight.available && m_nightLight.on, animate);
-    m_energySaver->SetEnabled(m_power.energySaverAvailable);
-    m_energySaver->SetOn(m_power.energySaver, animate);
+    m_keepAwakeChip->SetOn(m_keepAwake, animate);
 }
 
 void StatusSection::UpdateClock()
@@ -130,6 +127,12 @@ void StatusSection::SetAudio(const AudioState& audio, bool animate)
 void StatusSection::SetNightLight(const NightLightState& nightLight, bool animate)
 {
     m_nightLight = nightLight;
+    ApplyChips(animate);
+}
+
+void StatusSection::SetKeepAwake(bool on, bool animate)
+{
+    m_keepAwake = on;
     ApplyChips(animate);
 }
 

@@ -83,7 +83,7 @@ IslandWindow::~IslandWindow()
     }
 }
 
-bool IslandWindow::Create(HINSTANCE instance)
+bool IslandWindow::Create(HINSTANCE instance, bool glassSnapshot)
 {
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(windowClass);
@@ -117,6 +117,13 @@ bool IslandWindow::Create(HINSTANCE instance)
     m_graphics.Initialize(m_compositor);
     m_graphics.OnDeviceReplaced([this] { Rebuild(); });
     m_visuals.Initialize(m_hwnd, m_compositor, m_graphics);
+    m_capture.Initialize(m_hwnd, m_graphics, glassSnapshot);
+    m_capture.onFrame = [this]
+    {
+        // The first fresh copy since the island appeared: the clear glass takes over from the frosted.
+        const IslandState state = State();
+        m_visuals.ShowClear(true, state != IslandState::Hidden && state != IslandState::Tucked);
+    };
 
     m_ui.compositor = m_compositor;
     m_ui.graphics = &m_graphics;
@@ -202,7 +209,32 @@ void IslandWindow::Rebuild()
     m_controlCenter->Build();
     m_demoView->Build();
     m_windowSize = {};
+    UpdateGlass();
     ShowState(false);
+}
+
+void IslandWindow::UpdateGlass()
+{
+    // Clear glass needs transparency effects on (like the frosted) and screen capture.
+    const bool clear = m_capture.SetEnabled(m_glass.style == L"clear" && m_effectsEnabled);
+
+    // The strip it copies: centred like the island, from the top edge down,
+    // wide and tall enough for the biggest panel and its spring overshoot.
+    const float monitorWidth = static_cast<float>(m_monitor.right - m_monitor.left);
+    const float monitorHeight = static_cast<float>(m_monitor.bottom - m_monitor.top);
+    const float tallest = std::max({ m_controlCenter->Height(), m_demoView->Height(), m_peekView->Height(), m_idleView->Height() });
+    const float widest = std::max({ m_controlCenter->Width(), m_demoView->Width(), m_peekView->Width() });
+    const int width = static_cast<int>(std::min(monitorWidth, 2.0f * std::ceil((widest * 1.06f + m_ui.Px(40.0f)) / 2.0f)));
+    const int height = static_cast<int>(std::min(monitorHeight, std::ceil(m_ui.Px(m_layout.topGap) + tallest * 1.08f + m_ui.Px(24.0f))));
+    m_capture.SetRegion(MonitorFromPoint({ m_monitor.left, m_monitor.top }, MONITOR_DEFAULTTOPRIMARY), width, height);
+    m_visuals.SetClearSource(clear ? m_capture.Surface() : nullptr, static_cast<float>(width));
+
+    const IslandState state = State();
+    const bool showing = state == IslandState::Idle || state == IslandState::Peek || state == IslandState::Expanded;
+    if (clear && (showing || m_capture.SnapshotPending()))
+    {
+        m_capture.Start();  // tests: the snapshot is taken now, before the island shows
+    }
 }
 
 void IslandWindow::SetFullscreenHidden(bool hidden, bool immediately)
@@ -318,6 +350,15 @@ void IslandWindow::RebuildControlCenter()
     }
 }
 
+void IslandWindow::SetKeepAwake(bool on)
+{
+    m_keepAwake = on;
+    if (State() != IslandState::Hidden)
+    {
+        m_controlCenter->SetKeepAwake(on);
+    }
+}
+
 void IslandWindow::SetNightLight(const NightLightState& nightLight)
 {
     m_nightLight = nightLight;
@@ -360,6 +401,7 @@ void IslandWindow::PushQuickControls()
     SetBrightness(m_brightness);
     SetDisplays(m_displays);
     m_controlCenter->SetNightLight(m_nightLight);
+    m_controlCenter->SetKeepAwake(m_keepAwake);
     m_controlCenter->SetRadios(m_radios);
     m_controlCenter->SetWifi(m_wifi);
     m_controlCenter->SetBluetooth(m_bluetooth);
@@ -408,6 +450,21 @@ void IslandWindow::EnterState(IslandState from, IslandState to)
     if (from == IslandState::Expanded && !m_posed)
     {
         m_showDemo = false;  // the next click opens the control center again
+    }
+
+    // Clear glass: the screen behind is copied only while the island shows.
+    const auto showing = [](IslandState state)
+    {
+        return state == IslandState::Idle || state == IslandState::Peek || state == IslandState::Expanded;
+    };
+    if (showing(to) && !showing(from))
+    {
+        m_visuals.ShowClear(false, false);  // frosted until a fresh copy arrives (not a stale one)
+        m_capture.Start();
+    }
+    else if (!showing(to))
+    {
+        m_capture.Stop();  // the last copy stays while the island slides away
     }
 
     switch (to)

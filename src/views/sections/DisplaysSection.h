@@ -41,6 +41,7 @@ private:
     std::vector<std::wstring> m_ids;
     std::unique_ptr<Label> m_hint;
     std::array<std::unique_ptr<ListRow>, kModes> m_modes;
+    std::unique_ptr<Spotlight> m_spotlight;
 };
 
 // "Legion 27Q-10 · 144 Hz". Pure, unit-tested.

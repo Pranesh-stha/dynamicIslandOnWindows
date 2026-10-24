@@ -6,6 +6,7 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Graphics.Effects.h>
 
+#include <algorithm>
 #include <array>
 #include <vector>
 
@@ -90,6 +91,60 @@ namespace
     {
         return PropertyValue::CreateSingleArray(values).as<IPropertyValue>();
     }
+
+    IPropertyValue Value(float value)
+    {
+        return PropertyValue::CreateSingle(value).as<IPropertyValue>();
+    }
+
+    // Saturation and brightness as a colour matrix: each output colour is a
+    // mix of the input colours. Mixing towards the grey value (weighted by how
+    // bright the eye sees red, green and blue) desaturates; away boosts colour.
+    std::array<float, 20> ColourBoost(float s, float b)
+    {
+        constexpr float r = 0.2126f, g = 0.7152f, bl = 0.0722f;
+        return {
+            (r * (1 - s) + s) * b, r * (1 - s) * b,       r * (1 - s) * b,        0,  // input red ->   R G B A
+            g * (1 - s) * b,       (g * (1 - s) + s) * b, g * (1 - s) * b,        0,  // input green -> R G B A
+            bl * (1 - s) * b,      bl * (1 - s) * b,      (bl * (1 - s) + s) * b, 0,  // input blue ->  R G B A
+            0,                     0,                     0,                      1,  // alpha unchanged
+            0,                     0,                     0,                      0,  // no offset
+        };
+    }
+
+    winrt::com_ptr<D2DEffect> ColourMatrixEffect(const std::array<float, 20>& matrix, const effects::IGraphicsEffectSource& source)
+    {
+        // The compositor wants every property of the effect, in Direct2D's
+        // own numbering: the matrix, the alpha mode and "clamp the output".
+        return winrt::make_self<D2DEffect>(CLSID_D2D1ColorMatrix,
+            std::vector<IPropertyValue>{ Value(matrix), Value(static_cast<uint32_t>(D2D1_COLORMATRIX_ALPHA_MODE_PREMULTIPLIED)),
+                                         PropertyValue::CreateBoolean(true).as<IPropertyValue>() },
+            std::vector<effects::IGraphicsEffectSource>{ source });
+    }
+}
+
+wuc::CompositionBrush Effects::CreateClearGlassBrush(const wuc::Compositor& compositor, const wuc::CompositionBrush& source,
+                                                     float blurPx, float saturation, float brightness)
+{
+    try
+    {
+        // Blur (standard deviation, speed/quality balance, and "hard" edges:
+        // the edge pixels are repeated instead of fading to transparent),
+        // then the colour boost.
+        const auto blur = winrt::make_self<D2DEffect>(CLSID_D2D1GaussianBlur,
+            std::vector<IPropertyValue>{ Value(std::max(0.0f, blurPx)), Value(static_cast<uint32_t>(D2D1_GAUSSIANBLUR_OPTIMIZATION_BALANCED)),
+                                         Value(static_cast<uint32_t>(D2D1_BORDER_MODE_HARD)) },
+            std::vector<effects::IGraphicsEffectSource>{ wuc::CompositionEffectSourceParameter(L"Source") });
+        const auto colour = ColourMatrixEffect(ColourBoost(saturation, brightness), blur.as<effects::IGraphicsEffectSource>());
+        auto brush = compositor.CreateEffectFactory(colour.as<effects::IGraphicsEffect>()).CreateBrush();
+        brush.SetSourceParameter(L"Source", source);
+        return brush;
+    }
+    catch (const winrt::hresult_error& error)
+    {
+        Log::Info(L"clear glass filter unavailable ({}); unfiltered", error.message());
+        return source;
+    }
 }
 
 wuc::CompositionBrush Effects::CreateBackdropBrush(const wuc::Compositor& compositor, float saturation, float brightness)
@@ -139,7 +194,7 @@ wuc::CompositionBrush Effects::CreateTiledBrush(const wuc::Compositor& composito
     {
         // The border effect in "wrap" mode repeats its input image outwards forever.
         const auto effect = winrt::make<D2DEffect>(CLSID_D2D1Border,
-            std::vector<IPropertyValue>{ Value(D2D1_BORDER_EDGE_MODE_WRAP), Value(D2D1_BORDER_EDGE_MODE_WRAP) },
+            std::vector<IPropertyValue>{ Value(static_cast<uint32_t>(D2D1_BORDER_EDGE_MODE_WRAP)), Value(static_cast<uint32_t>(D2D1_BORDER_EDGE_MODE_WRAP)) },
             std::vector<effects::IGraphicsEffectSource>{ wuc::CompositionEffectSourceParameter(L"Tile") });
         auto brush = compositor.CreateEffectFactory(effect).CreateBrush();
         brush.SetSourceParameter(L"Tile", tileBrush);

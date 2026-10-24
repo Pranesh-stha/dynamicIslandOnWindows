@@ -74,7 +74,7 @@ function Check([string]$name, [bool]$ok, [string]$detail) {
 }
 
 [Visual]::StartBackdrop()
-Start-Process $exe -ArgumentList "--pose peek"
+Start-Process $exe -ArgumentList "--pose peek --glass-snapshot"  # visible to screenshots (see visual_check.ps1)
 Start-Sleep -Seconds 2
 $before = MediaLines
 try {

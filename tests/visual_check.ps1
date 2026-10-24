@@ -34,7 +34,10 @@ function Morph([string]$name, [int]$pose, [int]$row, [int]$ms) {
 [Visual]::Width = [Visual]::GetSystemMetrics(0)
 [Visual]::Height = 760
 [Visual]::StartBackdrop()
-Start-Process $exe -ArgumentList "--pose idle"
+# --glass-snapshot: the clear glass from one frame taken before the island
+# shows, so the island stays visible to these screenshots (normally it is
+# left out of every capture).
+Start-Process $exe -ArgumentList "--pose idle --glass-snapshot"
 Start-Sleep -Milliseconds 1500
 try {
     $r = [Visual]::IslandRect()

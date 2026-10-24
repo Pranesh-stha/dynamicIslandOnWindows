@@ -54,6 +54,7 @@ public:
     Size MeasureText(std::wstring_view text, const TextStyle& style);
 
     IWICImagingFactory* Wic() const { return m_wic.get(); }
+    ID3D11Device* D3DDevice() const { return m_d3dDevice.get(); }  // the device every surface is drawn with
     const std::wstring& TextFont() const { return m_textFont; }
 
 private:

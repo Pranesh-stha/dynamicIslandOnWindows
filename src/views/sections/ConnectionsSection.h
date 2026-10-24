@@ -48,6 +48,7 @@ private:
     std::array<std::unique_ptr<ListRow>, kRows> m_rows;
     std::array<std::wstring, kRows> m_rowIds;  // the network name or device id each row shows
     std::unique_ptr<ListRow> m_footer;
+    std::unique_ptr<Spotlight> m_spotlight;
     int m_page = 0;      // when the list is longer than the rows
     int m_moreRow = -1;  // the row that shows the next page, if any
     winrt::Windows::System::DispatcherQueueTimer m_rescan{ nullptr };

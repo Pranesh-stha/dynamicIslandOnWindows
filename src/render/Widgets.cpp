@@ -55,6 +55,35 @@ void RoundedRect::Resize(float width, float height, float radius)
     geometry.CornerRadius({ radius, radius });
 }
 
+namespace
+{
+    // An "on" circle behind an icon: pops out from the middle with a little
+    // bounce, and shrinks away when turned off.
+    void PopCircle(const wuc::ShapeVisual& circle, bool on, bool animate, const Spring& spring)
+    {
+        const auto size = circle.Size();
+        circle.CenterPoint({ size.x / 2.0f, size.y / 2.0f, 0.0f });
+        if (!animate)
+        {
+            circle.StopAnimation(L"Scale");
+            circle.Scale({ 1.0f, 1.0f, 1.0f });
+            SetOpacityNow(circle, on ? 1.0f : 0.0f);
+            return;
+        }
+        if (on)
+        {
+            circle.Scale({ 0.5f, 0.5f, 1.0f });
+            Motion::SpringTo(circle, L"Scale", float3{ 1.0f, 1.0f, 1.0f }, spring);
+            Motion::EaseTo(circle, L"Opacity", 1.0f, 90);
+        }
+        else
+        {
+            Motion::SpringTo(circle, L"Scale", float3{ 0.7f, 0.7f, 1.0f }, Spring{ 1.0f, spring.periodMs });
+            Motion::EaseTo(circle, L"Opacity", 0.0f, 140);
+        }
+    }
+}
+
 // --- Label -------------------------------------------------------------------
 
 Label::Label(const Ui& ui, float sizeDip, DWRITE_FONT_WEIGHT weight, bool icon) : m_ui(ui)
@@ -62,12 +91,16 @@ Label::Label(const Ui& ui, float sizeDip, DWRITE_FONT_WEIGHT weight, bool icon) 
     m_style.sizePx = ui.scale * sizeDip;
     m_style.weight = weight;
     m_style.icon = icon;
+    m_visual = ui.compositor.CreateSpriteVisual();
+    if (!ui.graphics)
+    {
+        return;  // unit tests: controls without anything drawn
+    }
     m_surface = ui.graphics->CreateSurface();
     auto brush = ui.compositor.CreateSurfaceBrush(m_surface);
     brush.Stretch(wuc::CompositionStretch::None);  // 1 surface pixel = 1 screen pixel
     brush.HorizontalAlignmentRatio(0.0f);
     brush.VerticalAlignmentRatio(0.0f);
-    m_visual = ui.compositor.CreateSpriteVisual();
     m_visual.Brush(brush);
 }
 
@@ -112,7 +145,7 @@ float Label::Height() const
 
 void Label::Render()
 {
-    if (m_text.empty())
+    if (m_text.empty() || !m_surface)
     {
         m_size = {};
         m_visual.Size({ 0.0f, 0.0f });
@@ -591,16 +624,10 @@ void ToggleTile::SetBusy(bool busy)
 
 void ToggleTile::SetOn(bool on, bool animate)
 {
+    const bool changed = on != m_isOn;
     m_isOn = on;
     m_switch.SetOn(on, animate && !m_compact);
-    if (animate)
-    {
-        Motion::EaseTo(m_iconOn.visual, L"Opacity", on ? 1.0f : 0.0f, 180);
-    }
-    else
-    {
-        SetOpacityNow(m_iconOn.visual, on ? 1.0f : 0.0f);
-    }
+    PopCircle(m_iconOn.visual, on, animate && changed, m_ui.motion->toggle);
 }
 
 void ToggleTile::SetSubtitle(std::wstring_view text)
@@ -674,7 +701,10 @@ ToggleChip::ToggleChip(const Ui& ui, wchar_t glyph, std::wstring_view label)
 {
     m_background = RoundedRect(ui, 1.0f, 1.0f, 0.0f, White(0.10f));
     m_onLayer = RoundedRect(ui, 1.0f, 1.0f, 0.0f, ui.accent);
-    m_onLayer.visual.Opacity(0.0f);
+    // Seen through a circle that grows out of the icon when it turns on.
+    m_bloom = ui.compositor.CreateEllipseGeometry();
+    m_bloom.Radius({ 0.0f, 0.0f });
+    m_onLayer.visual.Clip(ui.compositor.CreateGeometricClip(m_bloom));
     m_hoverLayer = RoundedRect(ui, 1.0f, 1.0f, 0.0f, White(0.08f));
     m_hoverLayer.visual.Opacity(0.0f);
     m_icon.SetText(std::wstring(1, glyph));
@@ -700,6 +730,20 @@ void ToggleChip::Layout()
     const float iconX = m_ui.Px(12.0f);
     m_icon.SetPosition(iconX, std::round((m_height - m_icon.Height()) / 2.0f));
     m_label.SetPosition(iconX + m_icon.Width() + m_ui.Px(7.0f), std::round((m_height - m_label.Height()) / 2.0f));
+    m_bloom.Center({ iconX + m_icon.Width() / 2.0f, m_height / 2.0f });
+    if (m_on)
+    {
+        m_bloom.StopAnimation(L"Radius");
+        const float full = FullBloom();
+        m_bloom.Radius({ full, full });
+    }
+}
+
+float ToggleChip::FullBloom() const
+{
+    // Far enough to reach the chip's farthest corner from the icon.
+    const float x = std::max(m_bloom.Center().x, m_width - m_bloom.Center().x);
+    return std::sqrt(x * x + m_height * m_height) + 1.0f;
 }
 
 void ToggleChip::SetOn(bool on, bool animate)
@@ -709,13 +753,18 @@ void ToggleChip::SetOn(bool on, bool animate)
         return;
     }
     m_on = on;
+    const float radius = on ? FullBloom() : 0.0f;
     if (animate)
     {
-        Motion::EaseTo(m_onLayer.visual, L"Opacity", on ? 1.0f : 0.0f, 180);
+        // Spreads out with a little bounce; draws back in without one (a
+        // circle can't shrink past nothing).
+        Motion::SpringTo(m_bloom, L"Radius", float2{ radius, radius },
+                         on ? m_ui.motion->toggle : Spring{ 1.0f, m_ui.motion->toggle.periodMs });
     }
     else
     {
-        SetOpacityNow(m_onLayer.visual, on ? 1.0f : 0.0f);
+        m_bloom.StopAnimation(L"Radius");
+        m_bloom.Radius({ radius, radius });
     }
 }
 
@@ -828,14 +877,7 @@ void ListRow::SetContent(wchar_t glyph, std::wstring_view title, std::wstring_vi
     if (active != m_active)
     {
         m_active = active;
-        if (animate)
-        {
-            Motion::EaseTo(m_iconOn.visual, L"Opacity", active ? 1.0f : 0.0f, 180);
-        }
-        else
-        {
-            SetOpacityNow(m_iconOn.visual, active ? 1.0f : 0.0f);
-        }
+        PopCircle(m_iconOn.visual, active, animate, m_ui.motion->toggle);
     }
 }
 
@@ -876,7 +918,73 @@ void ListRow::SetShown(bool shown, bool animate)
 
 void ListRow::OnHoverChanged(bool hovered)
 {
+    if (m_spotlight)
+    {
+        if (hovered)
+        {
+            m_spotlight->MoveTo(m_x, m_y, m_width, m_height);
+        }
+        else
+        {
+            m_spotlight->Leave();
+        }
+        return;
+    }
     Motion::EaseTo(m_highlight.visual, L"Opacity", hovered ? 1.0f : 0.0f, m_ui.motion->hoverFadeMs);
+}
+
+// --- Spotlight ---------------------------------------------------------------
+
+Spotlight::Spotlight(const Ui& ui) : m_ui(ui)
+{
+    m_rect = RoundedRect(ui, 1.0f, 1.0f, 0.0f, White(0.08f));
+    m_rect.visual.Opacity(0.0f);
+}
+
+void Spotlight::MoveTo(float x, float y, float width, float height)
+{
+    // Coming straight from another row (it was just left): glide there.
+    // Otherwise appear in place.
+    const bool glide = m_shown || GetTickCount64() - m_leftAt < 150;
+    const float radius = m_ui.Px(10.0f);
+    m_rect.visual.Size({ width, height });
+    m_rect.geometry.CornerRadius({ radius, radius });
+    if (glide)
+    {
+        Motion::SpringTo(m_rect.visual, L"Offset", float3{ x, y, 0.0f }, m_ui.motion->toggle);
+        Motion::SpringTo(m_rect.geometry, L"Size", float2{ width, height }, m_ui.motion->toggle);
+    }
+    else
+    {
+        m_rect.visual.StopAnimation(L"Offset");
+        m_rect.geometry.StopAnimation(L"Size");
+        m_rect.visual.Offset({ x, y, 0.0f });
+        m_rect.geometry.Size({ width, height });
+    }
+    Motion::EaseTo(m_rect.visual, L"Opacity", 1.0f, m_ui.motion->hoverFadeMs);
+    m_shown = true;
+}
+
+void Spotlight::Leave()
+{
+    if (!m_shown)
+    {
+        return;
+    }
+    m_shown = false;
+    m_leftAt = GetTickCount64();
+    // A moment's wait: moving onto the next row comes right after leaving this one.
+    Motion::EaseTo(m_rect.visual, L"Opacity", 0.0f, m_ui.motion->hoverFadeMs, 60);
+}
+
+void Spotlight::Hide()
+{
+    m_shown = false;
+    m_leftAt = 0;
+    m_rect.visual.StopAnimation(L"Opacity");
+    m_rect.visual.StopAnimation(L"Offset");
+    m_rect.geometry.StopAnimation(L"Size");
+    m_rect.visual.Opacity(0.0f);
 }
 
 void ListRow::OnPressChanged(bool pressed)
@@ -1066,12 +1174,13 @@ void Segmented::OnPointerUp(bool inside)
 
 // --- Slider ------------------------------------------------------------------
 
-Slider::Slider(const Ui& ui) : Control(ui)
+Slider::Slider(const Ui& ui) : Control(ui), m_bubbleText(ui, 11.0f, DWRITE_FONT_WEIGHT_SEMI_BOLD)
 {
     // A thick bar with no knob: how much of it is filled is the value.
     // Even pixel sizes keep it centred on whole pixels, so its edges stay crisp.
     m_thin = ui.EvenPx(8.0f);
-    m_thick = ui.EvenPx(10.0f);
+    m_thick = ui.EvenPx(10.0f);   // hovered
+    m_drag = ui.EvenPx(14.0f);    // held
 
     // Two numbers drive everything: Value (0..1) and the bar's Thickness.
     // The fill and the bar's outline follow them through expressions, so
@@ -1091,6 +1200,19 @@ Slider::Slider(const Ui& ui) : Control(ui)
     m_track.Children().InsertAtTop(m_trackBackground);
     m_track.Children().InsertAtTop(m_fill);
     m_root.Children().InsertAtTop(m_track);
+
+    // The value bubble, sized for the widest text ("100 %").
+    m_bubble = ui.compositor.CreateContainerVisual();
+    m_bubble.Opacity(0.0f);
+    m_bubbleText.SetText(L"100 %");
+    const float bubbleWidth = std::round(m_bubbleText.Width() + ui.Px(16.0f));
+    const float bubbleHeight = ui.EvenPx(22.0f);
+    m_bubble.Size({ bubbleWidth, bubbleHeight });
+    m_bubble.CenterPoint({ bubbleWidth / 2.0f, bubbleHeight, 0.0f });  // it grows out of the bar
+    m_bubbleBackground = RoundedRect(ui, bubbleWidth, bubbleHeight, bubbleHeight / 2.0f, { 240, 30, 30, 34 });
+    m_bubble.Children().InsertAtTop(m_bubbleBackground.visual);
+    m_bubble.Children().InsertAtTop(m_bubbleText.Visual());
+    m_root.Children().InsertAtTop(m_bubble);
 }
 
 void Slider::Layout()
@@ -1114,6 +1236,12 @@ void Slider::Layout()
     m_trackShape.StartAnimation(L"Size", expression(L"Vector2(W, p.Thickness)"));
     m_trackShape.StartAnimation(L"CornerRadius", expression(L"Vector2(p.Thickness / 2, p.Thickness / 2)"));
     m_fill.StartAnimation(L"Scale", expression(L"Vector3(p.Value, 1, 1)"));
+    // The bubble rides above the end of the fill, kept inside the bar's ends.
+    auto bubble = expression(L"Vector3(Clamp(p.Value * W - B / 2, -B / 4, W - B * 3 / 4), -B2 - G, 0)");
+    bubble.SetScalarParameter(L"B", m_bubble.Size().x);
+    bubble.SetScalarParameter(L"B2", m_bubble.Size().y);
+    bubble.SetScalarParameter(L"G", m_ui.Px(6.0f));
+    m_bubble.StartAnimation(L"Offset", bubble);
 }
 
 float Slider::ValueAt(float x) const
@@ -1147,10 +1275,36 @@ void Slider::SetValue(float value, bool animate)
 
 void Slider::UpdateLook()
 {
-    // Hovered or held: the bar grows a little and the fill turns fully bright.
+    // Hovered: the bar grows a little and the fill turns fully bright. Held:
+    // it grows more, and the bubble with the value pops up above it.
     const bool active = m_hovered || m_dragging;
-    Motion::SpringTo(m_properties, L"Thickness", active ? m_thick : m_thin, m_ui.motion->slider);
+    Motion::SpringTo(m_properties, L"Thickness", m_dragging ? m_drag : active ? m_thick : m_thin, m_ui.motion->slider);
     Motion::EaseTo(m_fill, L"Opacity", active ? 1.0f : 0.9f, m_ui.motion->hoverFadeMs);
+    if (m_dragging)
+    {
+        UpdateBubble();
+        Motion::EaseTo(m_bubble, L"Opacity", 1.0f, 90);
+        m_bubble.Scale({ 0.6f, 0.6f, 1.0f });
+        Motion::SpringTo(m_bubble, L"Scale", float3{ 1.0f, 1.0f, 1.0f }, m_ui.motion->press);
+    }
+    else
+    {
+        // It stays a moment after letting go, so you see where it ended.
+        Motion::EaseTo(m_bubble, L"Opacity", 0.0f, 160, 350);
+    }
+}
+
+void Slider::UpdateBubble()
+{
+    const int value = static_cast<int>(std::lround(m_value * 100.0f));
+    if (value == m_bubbleValue)
+    {
+        return;
+    }
+    m_bubbleValue = value;
+    m_bubbleText.SetText(std::to_wstring(value) + L" %");
+    const auto size = m_bubble.Size();
+    m_bubbleText.SetPosition(std::round((size.x - m_bubbleText.Width()) / 2.0f), std::round((size.y - m_bubbleText.Height()) / 2.0f));
 }
 
 void Slider::OnHoverChanged(bool hovered)
@@ -1185,6 +1339,7 @@ void Slider::OnPointerDrag(float x, float)
     {
         m_value = value;
         Show(value, false);
+        UpdateBubble();
         if (onChange)
         {
             onChange(value, false);

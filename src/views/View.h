@@ -37,6 +37,9 @@ protected:
     // Called when the view starts or stops being shown, e.g. to run the
     // progress bar only while it can be seen.
     virtual void OnVisibilityChanged(bool /*visible*/) {}
+    // Called when it starts being shown with animation (after OnVisibilityChanged),
+    // for entrances of its own, e.g. columns sliding in one after another.
+    virtual void OnAppear() {}
 
     // Replaces the old layer with a fresh, empty one of this size. The old
     // one is hidden at once and released a few seconds later (see Retire).

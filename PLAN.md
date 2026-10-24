@@ -129,7 +129,9 @@ Why this one:
 
 There is no setting to change; it just follows the primary monitor. With a college projector, the laptop screen stays primary, so the island stays on the laptop.
 
-**Idle look (decided):** a frosted glass pill.
+**Idle look (decided):** a glass pill.
+
+**Clear glass (decided 2026-10-24, your choice):** like iPhone glass instead of Windows' heavy blur. While the island shows (never while tucked or hidden), Island copies the strip of screen behind it (Windows.Graphics.Capture, `render/GlassCapture.*`) and the compositor draws it lightly blurred (`glass.blur`, 6 DIP), colour-boosted, with a **lens ring** along the edge that shows what's just beyond it bent inwards (`glass.refraction`), a soft **sheen** at the top and a brighter rim. The frosted glass stays underneath until the first copy arrives (~60–220 ms) and is the fallback (`"style": "frosted"`, or when capture isn't possible). Trade-off you accepted: the island is left out of every capture, so it doesn't appear in screenshots, recordings or streams (`--glass-snapshot` is a tests-only exception).
 
 **Over maximized windows (decided; only with auto-hide off):** when the window in front is maximized on the island's monitor, the pill shrinks to a slim glass line (about 4 px) so it doesn't cover tabs or title bars. With auto-hide on (the default since 2026-10-24) the island is out of sight anyway, and the pill comes down only while the mouse is on it. The line touches the very top edge of the screen. Because the cursor stops at that edge, the line is easy to hit even though it's thin. Hovering still opens it.
 
@@ -167,6 +169,7 @@ There is no setting to change; it just follows the primary monitor. With a colle
 - Content crossfades: the old content fades out quickly, and the new content fades in partway through the morph with a slight scale-up.
 - **Interruptible:** if you reverse mid-animation, it continues from the current position *and speed*. It never snaps. (Built: position yes; speed not yet, see Phase 3.)
 - Spring values live in `settings.json`, so we can tune the feel without recompiling.
+- **Entrances (2026-10-24):** the control center's header and columns arrive one after another (30 ms apart), each sliding down 14 DIP into place as it fades in, while the panel unfolds. Closing with auto-hide, it shrinks and slides up into the top edge.
 
 **Controls: hover and click animations (decided).** Every button, toggle, radio choice and slider animates smoothly and cleanly.
 
@@ -184,7 +187,9 @@ General rules:
 | Play / Pause | Same as an icon button | The icon *morphs* play ↔ pause (crossfade with a slight scale/rotate) instead of swapping |
 | Toggle switch (Wi-Fi, Bluetooth) | Track lightens slightly | Knob slides with a soft spring and the track color crossfades. The knob stretches a little while held (iOS style) |
 | Radio / segmented choice (e.g. Extend / Duplicate) | Option highlight fades in | The selection pill *slides* to the new option |
-| Slider (volume, brightness) | The bar grows a little (8 → 10 DIP) and its fill brightens. **No knob** (changed 2026-10-24, your request): a thick rounded bar whose filled part is the level | While dragging, it follows the cursor 1:1 with no delay, because animating here would feel laggy. Clicking a spot on the bar glides there with a spring, and changes from keyboard keys glide too |
+| Slider (volume, brightness) | The bar grows a little (8 → 10 DIP) and its fill brightens. **No knob** (changed 2026-10-24, your request): a thick rounded bar whose filled part is the level | Held, it grows to 14 DIP and a small bubble pops up above the end of the fill with the value ("72 %"), staying a moment after you let go. While dragging, it follows the cursor 1:1 with no delay. Clicking a spot on the bar glides there with a spring, and changes from keyboard keys glide too |
+| List rows (networks, devices, projection) | **One highlight glides from row to row** with the mouse (like macOS menus) instead of each row fading its own | The row shrinks slightly; an "active" circle (connected, current mode) pops out from the middle |
+| Quick toggles (header) | Highlight fades in | Turning on, the colour **blooms out of the icon** to fill the pill; off, it draws back in |
 
 **Window strategy (for both smoothness and clicks):**
 
@@ -358,6 +363,17 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
   - ✅ Tucked: 0.0 ms CPU over 60 s, 32.8 MB RAM; no crashes in the event log.
   - ⬜ (you) Does pushing the mouse to the top-middle feel right? Is 300 DIP wide enough or too wide (`layout.revealWidth`)? Is the glass light enough (`glass.tintOpacity`, lower = clearer)? `tests\fullscreen_test.ps1` wasn't re-run (it moves your mouse; the fullscreen rules didn't change, and the unit tests cover hidden ↔ tucked).
 
+### Phase 6b: Clear glass, Keep awake, motion polish ✅ built (2026-10-24, your request)
+- ✅ **Energy saver button removed** (no supported switch, E19); in its place **Keep awake** (☕): while on, no sleep and the screen stays on (a documented power request, like PowerToys Awake; `powercfg /requests` lists it). Right-click: Settings › Power.
+- ✅ **Clear glass** (§5): live capture of the screen strip behind the island only while it shows; light blur, lens ring, sheen, brighter rim; frosted as the fallback. The island is left out of captures (your choice).
+- ✅ **Motion:** staggered control-center entrance; gliding list highlight; toggle colour bloom; popping "active" circles; slider grows while held with a value bubble; springs can now start after a delay.
+- **Done when:**
+  - ✅ Release and Debug build with no warnings; 205 unit checks.
+  - ✅ Real mode (no snapshot): no yellow capture border (checked along the screen's edges), the island is invisible to screenshots, first frame 63–220 ms after it appears; **3.5 % of one core while the panel is open** (copying the screen behind, up to 60 times a second), 0 while tucked; 35 MB.
+  - ✅ Hands-free visual check (`--glass-snapshot`): every state and morph as before, screenshots of the clear glass (stripes behind visible through a soft blur, the lens bending colour in at the edges), entrance frames at 122/200/283/403 ms showing the columns arriving in turn.
+  - ✅ Soak (`tests\soak_test.ps1`): 60 appear/tuck cycles (capture started and stopped 60 times): memory 34.0 → 34.7 MB, handles 557 → 560, no crashes.
+  - ⬜ (you) How the clear glass and the new motion *feel*; `glass.blur`, `glass.refraction`, `glass.tintOpacity` to taste.
+
 ### Phase 6: Displays (+ quick toggles) ✅ built (2026-10-24)
 - ✅ Displays are listed by friendly name with their refresh rate; clicking a name opens `ms-settings:display`.
 - ✅ **Projection** (like Win+P), shown once a second display is plugged in: PC screen only / Duplicate / Extend / Second screen only, read with `QueryDisplayConfig` and switched with `SetDisplayConfig` on a background thread (the same documented calls Win+P uses). The current mode is lit; the chosen one pulses until Windows has switched.
@@ -381,7 +397,7 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
 
 ### Later ideas (not committed)
 - **Motion polish candidates** (discussed 2026-10-24, waiting for your pick): content that slides with the morph, staggered entrances, a hover highlight that glides between list rows, press feedback from the click point, a slider that grows while dragging, value bubbles on sliders, a lit edge that follows the mouse, toggle colour bloom, rolling numbers for percentages, a soft glow while something plays. See the chat for details.
-- Lighter blur: Windows' blur strength can't be changed; a capture-based glass with our own blur would cost GPU time and battery (and needs screen capture), so it's parked.
+
 - Carry the current speed into a reversed morph (compute the spring's velocity ourselves and pass it as `InitialVelocity`). Positions are already continuous.
 - Replace Windows' own volume/brightness popup with the island. Hiding the built-in one is hacky and fragile.
 - Notifications, timer/stopwatch, charging animation.
@@ -587,7 +603,10 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-24 | Energy saver: show the state, open Settings to switch it. No undocumented system calls and no power plan writes (they're fragile or don't work while plugged in) |
 | 2026-10-24 | Projection modes appear only with 2+ displays connected; switching runs off the UI thread; tests never switch it |
 | 2026-10-24 | Closing with auto-hide: the panel shrinks and slides up into the edge at full opacity, fading only at the end (190 ms delay, 110 ms fade); the window drops to the strip 310 ms after |
-| 2026-10-24 | The blur strength stays Windows' own (it can't be changed through the compositor); see "Later ideas" |
+| 2026-10-24 | ~~The blur strength stays Windows' own~~ → **clear glass** with our own blur from a live screen capture, while the island shows (your choice, accepting that the island is left out of screenshots/recordings). Frosted stays as the fallback and `glass.style` |
+| 2026-10-24 | Keep awake replaces the Energy saver button (documented power request; ends when switched off or when Island quits) |
+| 2026-10-24 | The capture is limited to ~60 frames a second and copies only a centred strip (panel width + margin, panel height + overshoot); new frames come only when the screen behind changes |
+| 2026-10-24 | Test screenshots use `--glass-snapshot`: one frame taken before the island first shows, and the island is *not* left out of captures |
 
 ## 12. Update log
 
@@ -595,6 +614,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 17:15 | **Phase 6b: clear glass, Keep awake, motion polish** (your request). New: `render/GlassCapture.*` (screen strip capture), `services/KeepAwake.*`, `Spotlight` widget, `tests/soak_test.ps1`; `IslandVisuals` gained the clear layers (view, lens with a ring mask drawn off-screen, sheen); `Effects::CreateClearGlassBrush`; settings `glass.style` / `blur` / `refraction`; `Motion::SpringTo` delays; `View::OnAppear`. **Checked:** see Phase 6b. **Found and fixed while testing:** unit tests crashed once the slider got a text label (labels now skip drawing without a renderer); the capture's yellow-border check first matched the test backdrop's own gold stripes. |
 | 2026-10-24 14:02 | **Energy saver button reworked** (you reported it didn't work). Cause: the documented "start energy saver at battery level" setting, set to 100 %, doesn't switch energy saver on while plugged in (checked: still off), and Windows' own Settings page uses internal calls. Also found: your power plan was left at 100 % ("always" on battery) and Island's saved copy of your levels wasn't removed. **Fixed:** your levels are back (0 % plugged in, 30 % on battery, checked with `powercfg`), Island's registry key is gone, and the button now shows the real state and opens Settings › Energy saver; all power-plan writing code was removed. Builds clean, 205 checks. **Also measured (your question about RAM):** while developing, VS Code ~1.2 GB + its C/C++ extension ~1.2 GB (IntelliSense's database of the Windows SDK and C++/WinRT headers), Claude Code ~0.34 GB, the Claude desktop app ~0.35 GB; all near 0 % CPU when idle. Not development: Jenkins (a Java build server installed as an auto-start service, 110 MB) and the CD Projekt RED launcher's web view (110 MB). Island alone: 35 MB, 0 % CPU. |
 | 2026-10-24 13:50 | **Phase 6 + quick toggles** (your request: night light and energy saver buttons, mic mute, Phase 6, a closing animation, less blur, animation ideas). New: `services/DisplayService.*`, `services/NightLightService.*`, widget `ToggleChip`; `AudioService` gained the microphone, `PowerService` energy saver (and the newer `GUID_ENERGY_SAVER_STATUS`, because the older status says "not available" while plugged in); the Displays column gained names with refresh rates and the Project list; the header gained the three toggles; columns 0.24/0.25/0.19/0.32. **Checked:** builds clean (Release + Debug), 211 unit checks, `--hardware` 222 (read-only for everything new), screenshots, closing timeline, 0.0 ms CPU tucked, 33.5 MB, no crashes. **Not checked by me:** switching night light, energy saver or the projection (each would have changed your screen or power settings): please click them once. **Blur:** not changed. The glass uses Windows' own blur, whose strength apps can't set (details in the chat). |
 | 2026-10-24 13:19 | **Phase 5c** (your request: auto-hide like the taskbar, sliders without the knob that looked low, more translucent glass). `StateMachine` gained the *Tucked* state and `SetAutoHide`; `IslandWindow` shows it as an invisible strip at the top edge and slides the pill down/up (`IslandVisuals::SetPresent` fades it); `Slider` redrawn without a knob; settings `layout.autoHide` (true), `layout.revealWidth` (300), `glass.tintOpacity` 0.42; `TestHelpers.Touch()` + a touch test in `visual_check.ps1`. **Checked:** builds clean (Release + Debug), 178 checks, hands-free reveal/tuck timings, screenshots, 0.0 ms CPU tucked over 60 s, 32.8 MB, no crashes. **Found and fixed while testing:** after tucking, the empty window kept its old size for ~1.5 s (until the spring settled) and could have caught clicks on your browser tabs; it now drops to the strip as soon as the fade-out ends. |

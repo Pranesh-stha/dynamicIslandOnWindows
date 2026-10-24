@@ -15,6 +15,7 @@
 #include "services/WifiService.h"
 #include "services/BrightnessService.h"
 #include "services/FullscreenWatcher.h"
+#include "services/KeepAwake.h"
 #include "services/MediaService.h"
 #include "services/RadioService.h"
 
@@ -48,4 +49,5 @@ private:
     PowerService m_power;
     NightLightService m_nightLight;
     DisplayService m_displays;
+    KeepAwake m_keepAwake;
 };

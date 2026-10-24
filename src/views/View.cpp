@@ -113,6 +113,10 @@ void View::SetVisible(bool visible, bool animate)
     if (visible)
     {
         Motion::EaseTo(m_layer, L"Opacity", 1.0f, motion.contentFadeInMs, motion.contentFadeInDelayMs);
+        if (changed)
+        {
+            OnAppear();
+        }
     }
     else
     {
