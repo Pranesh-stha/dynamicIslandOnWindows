@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="426" viewBox="0 0 760 426" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif">
+<rect x="0.5" y="0.5" width="759" height="425" rx="16" fill="#f6f8fa" stroke="#d0d7de"/>
+<text x="28" y="40" font-size="18" font-weight="600" fill="#1f2328" text-anchor="start">Extra GPU work, by what Island is doing</text>
+<text x="28" y="63" font-size="12.5" font-weight="400" fill="#59636e" text-anchor="start">Windows' compositor with Island on screen, minus without it · % of the Intel GPU · lower is better</text>
+<line x1="250.0" y1="80" x2="250.0" y2="366" stroke="#d8dee4" stroke-width="1"/>
+<text x="250.0" y="386" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">0 %</text>
+<line x1="360.0" y1="80" x2="360.0" y2="366" stroke="#d8dee4" stroke-width="1"/>
+<text x="360.0" y="386" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">1 %</text>
+<line x1="470.0" y1="80" x2="470.0" y2="366" stroke="#d8dee4" stroke-width="1"/>
+<text x="470.0" y="386" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">2 %</text>
+<line x1="580.0" y1="80" x2="580.0" y2="366" stroke="#d8dee4" stroke-width="1"/>
+<text x="580.0" y="386" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">3 %</text>
+<line x1="690.0" y1="80" x2="690.0" y2="366" stroke="#d8dee4" stroke-width="1"/>
+<text x="690.0" y="386" font-size="12" font-weight="400" fill="#59636e" text-anchor="middle">4 %</text>
+<text x="236" y="104.0" font-size="13.5" font-weight="500" fill="#1f2328" text-anchor="end">Tucked away</text>
+<text x="236" y="120.0" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="end">most of the time</text>
+
+<text x="258.0" y="111.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">0 %: nothing at all</text>
+<text x="236" y="151.0" font-size="13.5" font-weight="500" fill="#1f2328" text-anchor="end">Pill showing</text>
+<path d="M250,136.0 H286.7 Q290.7,136.0 290.7,140.0 V152.0 Q290.7,156.0 286.7,156.0 H250 Z" fill="#2a78d6"/>
+<text x="298.7" y="151.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">0.37 %</text>
+<text x="236" y="184.0" font-size="13.5" font-weight="500" fill="#1f2328" text-anchor="end">Peek</text>
+<text x="236" y="200.0" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="end">mouse over it</text>
+<path d="M250,176.0 H287.8 Q291.8,176.0 291.8,180.0 V192.0 Q291.8,196.0 287.8,196.0 H250 Z" fill="#2a78d6"/>
+<text x="299.8" y="191.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">0.38 %</text>
+<text x="236" y="224.0" font-size="13.5" font-weight="500" fill="#1f2328" text-anchor="end">Timer running</text>
+<text x="236" y="240.0" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="end">pill ticking</text>
+<path d="M250,216.0 H312.0 Q316.0,216.0 316.0,220.0 V232.0 Q316.0,236.0 312.0,236.0 H250 Z" fill="#2a78d6"/>
+<text x="324.0" y="231.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">0.60 %</text>
+<text x="236" y="271.0" font-size="13.5" font-weight="500" fill="#1f2328" text-anchor="end">Control center open</text>
+<path d="M250,256.0 H320.8 Q324.8,256.0 324.8,260.0 V272.0 Q324.8,276.0 320.8,276.0 H250 Z" fill="#2a78d6"/>
+<text x="332.8" y="271.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">0.68 %</text>
+<text x="236" y="311.0" font-size="13.5" font-weight="500" fill="#1f2328" text-anchor="end">Control center over video</text>
+<path d="M250,296.0 H332.9 Q336.9,296.0 336.9,300.0 V312.0 Q336.9,316.0 332.9,316.0 H250 Z" fill="#2a78d6"/>
+<text x="344.9" y="311.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">0.79 %</text>
+<text x="236" y="344.0" font-size="13.5" font-weight="500" fill="#1f2328" text-anchor="end">Morphing nonstop</text>
+<text x="236" y="360.0" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="end">worst case, not normal use</text>
+<path d="M250,336.0 H640.9 Q644.9,336.0 644.9,340.0 V352.0 Q644.9,356.0 640.9,356.0 H250 Z" fill="#2a78d6"/>
+<text x="652.9" y="351.0" font-size="13" font-weight="600" fill="#1f2328" text-anchor="start">3.59 %</text>
+<line x1="250" y1="80" x2="250" y2="366" stroke="#59636e" stroke-width="1"/>
+<text x="28" y="412" font-size="11.5" font-weight="400" fill="#59636e" text-anchor="start">Measured on a Core Ultra 7 255HX laptop with Intel graphics · 100 % = the whole GPU</text>
+</svg>
