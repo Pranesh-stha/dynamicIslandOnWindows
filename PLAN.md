@@ -4,11 +4,11 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 
 ## 0. Current status (read this first)
 
-- **Current phase:** **Phases 0–8 are built** (8 = timer, stopwatch, charging moment, motion polish). Island is **installed** (`%LOCALAPPDATA%\Programs\Island`, "Island" in the Start menu). It hides for games, stays tucked away until you push the mouse to the top-middle (or while a timer runs, when the pill stays down), and shows **live glass** (the background shows through live, lightly blurred; no lag). The control center has time/date, Microphone / Night light / Keep awake / Sleep, battery, now playing + **timer**, volume + per-app mixer, brightness, projection modes, Wi-Fi/Bluetooth lists. **Next:** your week of daily use, the 48 h soak; full Liquid Glass stays parked (your call).
+- **Current phase:** ✅ **Complete: Phases 0–8 built, final test pass done (2026-10-24 19:20, see §10 "Final test report")**. Every automated test passes; in every state Island uses ~35 MB of RAM, ~0 % CPU and at most ~0.8 % of the GPU (3.7 % only while morphing nonstop). Island is **installed** (`%LOCALAPPDATA%\Programs\Island`, "Island" in the Start menu). It hides for games, stays tucked away until you push the mouse to the top-middle (or while a timer runs, when the pill stays down), and shows **live glass** (the background shows through live, lightly blurred; no lag). The control center has time/date, Microphone / Night light / Keep awake / Sleep, battery, now playing + **timer**, volume + per-app mixer, brightness, projection modes, Wi-Fi/Bluetooth lists. **Left for you (can't be automated):** real games (Valorant, Marvel Rivals; PresentMon), sleep/wake and lock/unlock once, a timer running to the end, plugging the charger in, the 48 h watch and a week of daily use. Full Liquid Glass stays parked (your call).
 - **Quit / reopen:** tray icon (^ next to the clock) → Quit Island; reopen from the Start menu (search "Island"). Tray → "Start with Windows" (off until you tick it). After changing code: `pwsh -File tools\install.ps1 -Build` updates the installed copy.
 - Hands-on checks are left for you in the Phase 1–7 lists (games + PresentMon, how the glass and motion feel, sleep/wake).
-- ⚠ Two crashes were found and fixed on 2026-10-24 (§12): an Island crash on an empty media object, and **DWM (the Windows compositor) crashing** when a rebuilt panel released objects with springs still running. None since.
-- **Last updated:** 2026-10-24 18:43 NPT (UTC+05:45)
+- ⚠ Two crashes were found and fixed on 2026-10-24 (§12): an Island crash on an empty media object, and **DWM (the Windows compositor) crashing** when a rebuilt panel released objects with springs still running. None since 08:20 (checked again in the final test pass, 19:20).
+- **Last updated:** 2026-10-24 19:20 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
@@ -17,7 +17,7 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
   - The exe ends up in `build\Debug\Island.exe` or `build\Release\Island.exe`.
   - In VS Code, F5 closes any running island, builds the project and starts the debugger.
   - `Island.exe --quit` closes a running island. Launching a new copy replaces the old one.
-- **Tests:** `ctest --preset debug` (or `release`) runs the unit tests; `build\Release\IslandTests.exe --hardware` also checks the real volume, brightness and mixer (it moves them 1 % and back) and lists the battery, Wi-Fi networks and Bluetooth devices (read only). `pwsh -File tests\fullscreen_test.ps1` runs the game-safety test with real windows (it clicks its own test windows, so hands off the mouse for ~15 s). `pwsh -File tests\visual_check.ps1` takes screenshots and measures the morphs *hands-free* (no mouse, no focus change). `pwsh -File tests\media_test.ps1` plays a silent test track to check now playing (your own music is never touched).
+- **Tests:** `ctest --preset debug` (or `release`) runs the unit tests; `build\Release\IslandTests.exe --hardware` also checks the real volume, brightness and mixer (it moves them 1 % and back) and lists the battery, Wi-Fi networks and Bluetooth devices (read only). `pwsh -File tests\fullscreen_test.ps1` runs the game-safety test with real windows (it clicks its own test windows, so hands off the mouse for ~15 s). `pwsh -File tests\visual_check.ps1` takes screenshots and measures the morphs *hands-free* (no mouse, no focus change). `pwsh -File tests\media_test.ps1` plays a silent test track to check now playing (your own music is never touched). `pwsh -File tests\timer_check.ps1` and `soak_test.ps1` are hands-free too. `pwsh -File tests\benchmark.ps1` measures CPU, RAM and GPU in every state (~5 min, hands-free).
 - **Poses:** `Island.exe --pose idle|peek|expanded|demo` holds the island in one state (for screenshots); tray → "Keep open (for tuning)" does the same while you edit settings.
 - **Log and settings:** the tray menu opens `config\settings.json` (edits apply live) and the log (`%LOCALAPPDATA%\Island\island.log`).
 - **Rule for every session:** after any meaningful change, add an entry at the top of the update log (§12) and refresh this section.
@@ -255,6 +255,8 @@ windowsUI/
     media_test.ps1           silent test media session
     soak_test.ps1            appear/tuck cycles; -Watch samples memory and handles for hours
     timer_check.ps1          hands-free timer / stopwatch / charging moment check
+    benchmark.ps1            CPU, RAM, GPU (Island and DWM) in every state, hands-free
+    moving_backdrop.ps1      a video-like moving pattern for the benchmark
     TestHelpers.cs           backdrop, poses, screenshots, Touch() for the scripts above
   tools/
     install.ps1  uninstall.ps1   install for your user + Start menu entry / remove it
@@ -407,6 +409,7 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
 - **Done when:**
   - ✅ Release and Debug build with no warnings; 205 unit checks; `--hardware` 218 (incl. "Start with Windows" switched the other way and back, ending as it was: off).
   - ✅ Installed copy running from `%LOCALAPPDATA%\Programs\Island`, Start menu entry present, exe carries the icon; **0.0 ms CPU over 60 s idle, 33.7 MB**; no crashes in the event log.
+  - ✅ Final test pass (2026-10-24 19:20, §10): soak 120 cycles PASS, the installed copy 35 MB and 0.00–0.05 % of one core tucked, no crashes.
   - ⬜ (you) Sleep/wake and lock/unlock once, then open the island: everything should be current. Run the 48 h watch (`pwsh -File tests\soak_test.ps1 -Watch -Hours 48`) and look at the CSV. Then: a week without thinking about it.
 
 ### Phase 8: Timer, stopwatch, charging moment, motion polish ✅ built (2026-10-24, your request)
@@ -417,13 +420,13 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
   - ✅ Release and Debug build with no warnings; 228 unit checks (new: timer maths and text, the pill-holding rule, spring position/speed/settling, rolling digits' equal widths).
   - ✅ `tests\timer_check.ps1` (hands-free, tests-only `--timer`, `--stopwatch`, `--charging-moment`): 5/5 PASS (a running timer keeps the pill down, also after the panel closes; the charging moment comes down from tucked and tucks away again); screenshots of the timer pill (0:59 → 0:58), Peek, the panel's timer row, the stopwatch, the battery filling.
   - ✅ `visual_check.ps1`: every morph as before; a reversed morph now carries on a little (994 → 1034 px) before turning around, instead of starting from rest. `soak_test.ps1`: PASS, 0 crashes.
-  - ✅ Cost: a running timer (pill showing, ticking once a second, clear glass at 2/s): Island 0.08 % of one core, GPU 0.25 % + compositor 1.4 %; 35.6 MB. Tucked, no timer: no work of Island's own (a Windows thread-pool tick now and then, ~0.03 %).
+  - ✅ Cost: a running timer (pill showing, ticking once a second, clear glass at 2/s): Island 0.08 % of one core, GPU 0.25 % + compositor 1.4 %; 35.6 MB. Tucked, no timer: no work of Island's own (a Windows thread-pool tick now and then, ~0.03 %). With live glass (final pass, §10): a running timer 0.21–0.31 % of one core, compositor +0.6 %.
   - ⬜ (you) Start a timer, let one finish (sound), plug the charger in, and see whether the ripple, rim light and glow feel right.
 
 ### Later ideas (updated 2026-10-24 with your answers)
 **Done since:** timer and stopwatch, the charging moment, and all the motion polish (Phase 8).
 
-**Liquid Glass:** mostly done (clear glass with the lens ring, Phase 6b). A full version, with every pixel bent by a real lens shape, would need Island to draw the glass itself every frame on the GPU (Windows' compositor doesn't take custom shaders), only while the island shows. **Not now** (your call, 2026-10-24). Measured cost of what we have (Intel GPU, video-like motion behind the open panel, §12 18:1x): frosted 1.3 %; clear at 60/30/15/10 pictures a second 24/18/10/7 %; the lens adds nothing measurable. So the cost is the screen capture itself (Windows composes the whole screen once more, without the island, for every picture), not the blur.
+**Liquid Glass:** mostly done (clear glass with the lens ring, Phase 6b). A full version, with every pixel bent by a real lens shape, would need Island to draw the glass itself every frame on the GPU (Windows' compositor doesn't take custom shaders), only while the island shows. **Not now** (your call, 2026-10-24). Measured cost of what we have (Intel GPU, video-like motion behind the open panel, §12 18:1x): frosted 1.3 %; clear at 60/30/15/10 pictures a second 24/18/10/7 %; the lens adds nothing measurable. So the cost is the screen capture itself (Windows composes the whole screen once more, without the island, for every picture), not the blur. (Correction, 19:20: the moving test pattern didn't actually start in those runs, so "motion behind" was really a still screen or your own video; the clear-vs-frosted comparison stands. Measured properly for live glass: §10.)
 
 **Dropped (you):**
 - Notifications in the island.
@@ -581,6 +584,40 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
 
 Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`, not Island. That's normal.
 
+### Final test report (2026-10-24 19:20)
+
+On your Legion (Intel Core Ultra 7 255HX, 20 threads; Island draws on the Intel GPU), installed Release build, live glass.
+
+**Tests:** all pass.
+
+| Test | Result |
+|---|---|
+| Clean Release + Debug build | 0 warnings; exe 1.47 MB, installed folder 1.4 MB |
+| `ctest` / `IslandTests --hardware` | 228 / 239 checks pass (hardware: volume, brightness, mixer moved 1 % and back; Start with Windows switched and back) |
+| `visual_check.ps1` | every state and morph as expected (screenshots) |
+| `timer_check.ps1` | 5/5: a running timer keeps the pill down (also after the panel closes); the charging moment comes down and tucks away again |
+| `media_test.ps1` | 2/2: switches to the playing test session (~0.6–0.9 s incl. starting the player), title / artist / app, **artwork cropped to the middle**, follows pause, switches back when it ends |
+| `fullscreen_test.ps1` | 8/8: hides in **0–9 ms** (limit 200), comes back 477 ms after (on purpose), the slim line over a maximized window, ignores fullscreen on the other monitor |
+| `soak_test.ps1 -Cycles 120` | PASS: handles 577 → 578; memory one step (34.9 → 42.1 MB around cycle 30, then flat for 80 cycles: a cache filling, not a leak) |
+| Crashes (event log, ID 1000) | none of Island or `dwm.exe` since 08:20 (the morning's D11 / empty-object crashes, fixed then) |
+
+**Resources** (`tests\benchmark.ps1`, two runs, which agreed; 15 s per state, 60 s tucked). CPU is % of **one** core: divide by 20 for the whole processor. Windows counts CPU time in 15.6 ms steps, so 0.10 % over 15 s is a single step (the smallest it can see). GPU is the Intel GPU's 3D engine; **"DWM +"** is what the compositor uses *because of* Island (DWM with Island minus DWM without it, same background). RAM = private working set = Task Manager's "Memory" column.
+
+| State | Island CPU | Island GPU | DWM + | RAM | GPU memory | Handles / threads |
+|---|---|---|---|---|---|---|
+| Tucked away, idle (60 s) | 0.00–0.05 % (≤ 2 Windows ticks a minute) | 0 | +0.00–0.01 % (nothing) | 34.6–35.0 MB | 23 MB | 572 / 38 |
+| Pill showing | 0.00–0.10 % | 0 | +0.37 % | 35 MB | 23 MB | ~580 / 42 |
+| Peek | 0.00–0.10 % | 0 | +0.38 % | 35 MB | 23 MB | ~576 / 42 |
+| Control center open | 0.10–0.21 % | 0.01 % | +0.68 % | 35 MB | 23 MB | ~587 / 42 |
+| Timer running (pill ticking) | 0.21–0.31 % | 0.07 % | +0.59 % | 35 MB | 23 MB | ~575 / 42 |
+| Morphing nonstop (every 0.7 s: worst case) | 0.73–1.04 % | 0.02 % | +3.5–3.7 % | 35 MB | 23 MB | ~590 / 42 |
+| Pill over video-like motion | 0.00 % | 0 | +0.25 % | 35 MB | 23 MB | ~575 / 41 |
+| Control center over motion | 0.00–0.31 % | 0.01 % | +0.79 % | 35 MB | 23 MB | ~585 / 42 |
+
+- **Against the hard limits (§1):** RAM 35 MB (target 20–40, limit 100) ✅; idle CPU 0.0 % ✅; idle GPU: no frames drawn when tucked ✅; hide < 0.2 s (0–9 ms) ✅; focus never taken (tests and design) ✅.
+- **Startup:** 250–330 ms from launch to the island's window.
+- Task Manager's "Working set" column (not shown by default) says ~88 MB at peak: that includes Windows' shared libraries, used by every app.
+
 ## 11. Decisions log
 
 | Date | Decision |
@@ -649,6 +686,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 19:20 | **Final test pass: complete** (your request: "let's make it officially complete"). Full report and the resource table: §10 "Final test report". **All pass:** clean builds (0 warnings), 228 unit / 239 hardware checks, visual_check, timer_check 5/5, media_test 2/2, fullscreen_test 8/8, soak 120 cycles; no Island or DWM crash since 08:20. **Measured (installed copy, live glass):** 35 MB RAM in every state; CPU 0.00–0.05 % of one core tucked, ≤ 0.3 % with the panel open or a timer running, ~1 % while morphing nonstop; the compositor needs +0.4 % GPU for the pill, +0.7–0.8 % for the open panel (also over moving video), +3.5 % only while morphing nonstop; startup 250–330 ms; hides for fullscreen in 0–9 ms. **Test fixes (no Island code changed):** `media_test.ps1`: the test player's artwork never reached Windows (a reference made from a plain file path or a .NET stream arrives as "no artwork"; Windows itself reported none, so Island was right), now a Windows `StorageFile`, and the panel shot is full width; `fullscreen_test.ps1` closes any running Island first (the soak test's copy was measured instead, a false "came back after 158 ms"). New: `tests/benchmark.ps1` (every state, Island and DWM, with and without motion behind) and `tests/moving_backdrop.ps1`. **Correction:** the moving pattern used for the 18:12 and 18:43 "motion behind" numbers failed to compile on PowerShell 7 (hidden, so unnoticed), so those were over a still screen or your own video; fixed and measured properly now. Installed copy updated and running. |
 | 2026-10-24 18:43 | **Live glass** (you: the clear glass lagged behind video in the open panel). Cause: it's built from pictures of the screen, 15 a second, so moving video behind is always a few frames ahead. New default style `live`: the background shows through the see-through window live, with Windows' blur mixed over it (`glass.frost`). Compared over the test backdrop: frost 0.3–0.5 leaves the text behind sharp enough to compete with the panel's labels; 0.8–0.9 with tint 0.45–0.5 reads well and looks a little clearer than frosted. Chosen: frost 0.85, tint 0.45. **Measured:** open panel with motion behind 1.35 % GPU (clear: 7.8 %, frosted: 1.3 %), pill 0.13 %; no lag by design. Your installed `settings.json` switched to `live` (backup kept). visual_check + timer_check pass, 228 unit checks, no crashes. |
 | 2026-10-24 18:32 | **Phase 8 built: timer, stopwatch, charging moment, motion polish** (your request). New: `services/TimerService.*`, `views/sections/TimerSection.*`, widgets `RollingText`, `Ripple`; `IdleView` shows a running timer or the charging moment; `PeekView` a timer mode; `IslandVisuals` the rim light, the music glow and speed-carrying morphs; `Motion::SpringAt`/`EaseTo` vectors/springs with a starting speed; `tests/timer_check.ps1`. **Checked:** see Phase 8. **Fixed while building:** the island's `SetTimer` hid Windows' own `SetTimer` (calls now explicit); the music glow was too strong as a ring around the big panel (55 % → 35 %). Installed copy updated. |
 | 2026-10-24 18:12 | **Clear glass cost measured and cut** (your request). First result: with the panel open, Windows' compositor used **~25 % of the Intel GPU** (Island itself ~5 %). Found: (1) a loop: the island redrawing counted as a change behind it, so every frame was captured; (2) every captured picture makes Windows compose the whole screen once more. Comparison with motion behind the open panel: frosted 1.3 %; clear at 60/30/15/10 pictures a second 23.8/17.6/9.7/6.6 %; lens on/off no difference. **Fixed:** frames that only changed inside the island's own window are skipped (Windows' dirty regions); new setting `glass.fps` (default **15**) for Peek and the panel; **2** for the small pill. **Now:** small pill 1.4 % (same as frosted), open panel 7.8 % worst case, 0 when tucked. Your settings, untouched (temporary copies with their own settings were used). |

@@ -49,7 +49,14 @@ $player = Join-Path $Out "player.ps1"
 `$props.Type = [Windows.Media.MediaPlaybackType]::Music
 `$props.MusicProperties.Title = 'Island test track'
 `$props.MusicProperties.Artist = 'Island test artist'
-`$props.Thumbnail = [Windows.Storage.Streams.RandomAccessStreamReference]::CreateFromUri([Uri]'$art')
+# The artwork as a Windows file: a reference made from a plain path or a .NET
+# stream reaches other apps as "no artwork".
+Add-Type -AssemblyName System.Runtime.WindowsRuntime
+`$asTask = [System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { `$_.Name -eq 'AsTask' -and `$_.GetParameters().Count -eq 1 -and `$_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation``1' } | Select-Object -First 1
+`$null = [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime]
+`$file = `$asTask.MakeGenericMethod([Windows.Storage.StorageFile]).Invoke(`$null, @([Windows.Storage.StorageFile]::GetFileFromPathAsync('$art')))
+`$file.Wait(-1) | Out-Null
+`$props.Thumbnail = [Windows.Storage.Streams.RandomAccessStreamReference]::CreateFromFile(`$file.Result)
 `$item.ApplyDisplayProperties(`$props)
 `$player = New-Object Windows.Media.Playback.MediaPlayer
 `$player.Volume = 0
@@ -73,6 +80,7 @@ function Check([string]$name, [bool]$ok, [string]$detail) {
     $results.Add([pscustomobject]@{ Test = $name; Result = $(if ($ok) { "PASS" } else { "FAIL" }); Detail = $detail })
 }
 
+[Visual]::Width = [Visual]::GetSystemMetrics(0); [Visual]::Height = 560  # as wide as the open panel
 [Visual]::StartBackdrop()
 Start-Process $exe -ArgumentList "--pose peek --glass-snapshot"  # visible to screenshots (see visual_check.ps1)
 Start-Sleep -Seconds 2
@@ -93,7 +101,7 @@ try {
     Start-Sleep -Milliseconds 1500
     Shot "1-peek-playing.png" 700 110
     [Visual]::Pose(3); Start-Sleep -Milliseconds 1200
-    Shot "2-expanded-playing.png" 900 260
+    Shot "2-expanded-playing.png" ([Visual]::GetSystemMetrics(0)) 560
 
     # After 8 s the test player pauses; the island must follow.
     Start-Sleep -Seconds 6

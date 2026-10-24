@@ -175,6 +175,7 @@ $primary = $monitors[$primaryIndex]
 $small = New-Object TestWin+RECT
 $small.Left = $primary.Left + 300; $small.Top = $primary.Top + 300; $small.Right = $small.Left + 800; $small.Bottom = $small.Top + 500
 
+Start-Process $exe -ArgumentList "--quit" -Wait  # a copy still running would be measured instead
 Start-Process $exe
 try {
     Check "island appears at start" ([TestWin]::WaitForIsland($true, 5000) -ge 0) ""
