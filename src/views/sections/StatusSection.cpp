@@ -43,15 +43,11 @@ float StatusSection::Build(const wuc::ContainerVisual& layer, ControlHost& contr
     };
     m_nightLightChip->onRightClick = [this] { if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:nightlight"); };
     m_energySaver = std::make_unique<ToggleChip>(m_ui, Glyph::EnergySaver, L"Energy saver");
-    m_energySaver->onClick = [this]
-    {
-        if (m_actions.setEnergySaver)
-        {
-            m_energySaver->SetBusy(m_running);  // until Windows reports the switch
-            m_actions.setEnergySaver(!m_power.energySaver);
-        }
-    };
-    m_energySaver->onRightClick = [this] { if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:batterysaver"); };
+    // Windows has no public way for an app to switch energy saver (its own
+    // Settings page uses internal calls), so this one shows the state and
+    // opens Settings > Energy saver, where the switch is.
+    m_energySaver->onClick = [this] { if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:batterysaver"); };
+    m_energySaver->onRightClick = m_energySaver->onClick;
     for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_energySaver.get() })
     {
         Add(layer, controls, *chip);
@@ -121,7 +117,6 @@ void StatusSection::SetPower(const PowerState& power, bool animate)
     if (m_time)
     {
         ArrangeBattery();
-        m_energySaver->SetBusy(false);
         ApplyChips(animate);
     }
 }
@@ -166,10 +161,6 @@ void StatusSection::OnVisibilityChanged(bool visible)
         if (m_tick)
         {
             m_tick.Stop();
-        }
-        if (m_energySaver)
-        {
-            m_energySaver->SetBusy(false);  // nothing animates while hidden
         }
     }
 }

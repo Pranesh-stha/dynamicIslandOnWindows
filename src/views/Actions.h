@@ -24,7 +24,6 @@ struct IslandActions
 
     // Quick toggles
     std::function<void(bool on)> setNightLight;
-    std::function<void(bool on)> setEnergySaver;
 
     // Displays
     std::function<void(const std::wstring& display, float value)> setBrightness;  // 0..1

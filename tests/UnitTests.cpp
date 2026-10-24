@@ -668,22 +668,6 @@ namespace
         damaged[16] = 0x00;
         CHECK(!NightLightIsOn(damaged).has_value() && !NightLightWithState(damaged, false, 1).has_value());
 
-        // Energy saver: on = "always" (100 %), remembering your own levels once;
-        // off = your levels back. Anything else is Settings' job.
-        const EnergySaverLevels yours{ 0, 30 }, always{ 100, 100 };
-        auto change = PlanEnergySaver(true, yours, std::nullopt);
-        CHECK(change.write && change.levels == always && change.remember && change.previous == yours && !change.openSettings);
-        change = PlanEnergySaver(true, yours, EnergySaverLevels{ 0, 20 });  // remembered from an earlier switch: kept
-        CHECK(change.write && !change.remember);
-        change = PlanEnergySaver(false, always, yours);
-        CHECK(change.write && change.levels == yours && change.forget && !change.openSettings);
-        change = PlanEnergySaver(false, always, std::nullopt);  // you chose "always" yourself
-        CHECK(!change.write && change.openSettings);
-        change = PlanEnergySaver(false, yours, std::nullopt);  // on because the battery is low
-        CHECK(!change.write && change.openSettings);
-        change = PlanEnergySaver(true, always, std::nullopt);  // "always" and still off: a policy decides
-        CHECK(!change.write && change.openSettings);
-
         // Projection modes, as Win+P.
         CHECK(ProjectionFromTopology(DISPLAYCONFIG_TOPOLOGY_INTERNAL) == Projection::PcScreenOnly);
         CHECK(ProjectionFromTopology(DISPLAYCONFIG_TOPOLOGY_CLONE) == Projection::Duplicate);
