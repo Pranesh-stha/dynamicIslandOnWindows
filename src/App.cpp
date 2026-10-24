@@ -2,6 +2,8 @@
 
 #include <shellapi.h>
 
+#include <chrono>
+
 #include "platform/Log.h"
 #include "platform/Startup.h"
 
@@ -84,6 +86,20 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
     {
         m_keepAwake.Set(on);
         m_island.SetKeepAwake(m_keepAwake.On());
+    };
+    actions.sleepNow = []
+    {
+        // A moment's pause, so the button's press shows and your click is
+        // over before the screen goes dark.
+        auto timer = winrt::Windows::System::DispatcherQueue::GetForCurrentThread().CreateTimer();
+        timer.IsRepeating(false);
+        timer.Interval(std::chrono::milliseconds(450));
+        timer.Tick([timer](auto&&, auto&&) mutable
+        {
+            timer.Stop();
+            SystemSleep::Now();
+        });
+        timer.Start();
     };
     actions.setBrightness = [this](const std::wstring& display, float value) { m_brightness.Set(display, value); };
     actions.setWifi = [this](bool on) { m_radios.SetWifi(on); };

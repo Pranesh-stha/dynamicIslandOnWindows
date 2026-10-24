@@ -16,6 +16,7 @@
 #include "services/BrightnessService.h"
 #include "services/FullscreenWatcher.h"
 #include "services/KeepAwake.h"
+#include "services/SystemSleep.h"
 #include "services/MediaService.h"
 #include "services/RadioService.h"
 

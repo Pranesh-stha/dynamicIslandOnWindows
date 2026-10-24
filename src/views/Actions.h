@@ -25,6 +25,7 @@ struct IslandActions
     // Quick toggles
     std::function<void(bool on)> setNightLight;
     std::function<void(bool on)> setKeepAwake;
+    std::function<void()> sleepNow;  // the PC sleeps (locked first)
 
     // Displays
     std::function<void(const std::wstring& display, float value)> setBrightness;  // 0..1

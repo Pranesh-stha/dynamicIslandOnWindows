@@ -46,7 +46,15 @@ float StatusSection::Build(const wuc::ContainerVisual& layer, ControlHost& contr
     m_keepAwakeChip = std::make_unique<ToggleChip>(m_ui, Glyph::KeepAwake, L"Keep awake");
     m_keepAwakeChip->onClick = [this] { if (m_actions.setKeepAwake) m_actions.setKeepAwake(!m_keepAwake); };
     m_keepAwakeChip->onRightClick = [this] { if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:powersleep"); };
-    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_keepAwakeChip.get() })
+    // Sleep now: the colour blooms as a "going" sign, and the PC sleeps a moment later.
+    m_sleepChip = std::make_unique<ToggleChip>(m_ui, Glyph::Sleep, L"Sleep");
+    m_sleepChip->onClick = [this]
+    {
+        m_sleepChip->SetOn(true, m_running);
+        if (m_actions.sleepNow) m_actions.sleepNow();
+    };
+    m_sleepChip->onRightClick = [this] { if (m_actions.openSettings) m_actions.openSettings(L"ms-settings:powersleep"); };
+    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_keepAwakeChip.get(), m_sleepChip.get() })
     {
         Add(layer, controls, *chip);
     }
@@ -68,13 +76,13 @@ void StatusSection::ArrangeChips()
     const float height = m_ui.EvenPx(32.0f);
     const float gap = m_ui.Px(8.0f);
     float total = -gap;
-    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_keepAwakeChip.get() })
+    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_keepAwakeChip.get(), m_sleepChip.get() })
     {
         total += chip->NaturalWidth() + gap;
     }
     float x = std::round(m_x + (m_width - total) / 2.0f);
     const float y = std::round(m_y + (m_time->Height() - height) / 2.0f);
-    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_keepAwakeChip.get() })
+    for (ToggleChip* chip : { m_mic.get(), m_nightLightChip.get(), m_keepAwakeChip.get(), m_sleepChip.get() })
     {
         chip->SetBounds(x, y, chip->NaturalWidth(), height);
         x += chip->NaturalWidth() + gap;
@@ -164,6 +172,10 @@ void StatusSection::OnVisibilityChanged(bool visible)
         if (m_tick)
         {
             m_tick.Stop();
+        }
+        if (m_sleepChip)
+        {
+            m_sleepChip->SetOn(false, false);  // ready again after waking
         }
     }
 }

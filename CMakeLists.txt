@@ -65,6 +65,7 @@ add_library(IslandCore STATIC
     src/services/BrightnessService.cpp
     src/services/FullscreenWatcher.cpp
     src/services/KeepAwake.cpp
+    src/services/SystemSleep.cpp
     src/services/MediaService.cpp
     src/services/MediaState.cpp
     src/services/DisplayService.cpp
