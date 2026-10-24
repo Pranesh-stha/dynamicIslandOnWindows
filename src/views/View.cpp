@@ -42,7 +42,12 @@ void View::SetHeight(float height)
 
 void View::SetVisible(bool visible, bool animate)
 {
+    const bool changed = visible != m_visible;
     m_visible = visible;
+    if (changed)
+    {
+        OnVisibilityChanged(visible);
+    }
     const MotionSettings& motion = *m_ui.motion;
     const float scale = visible ? 1.0f : kHiddenScale;
     if (!animate)

@@ -29,6 +29,10 @@ public:
     ControlHost& Controls() { return m_controls; }
 
 protected:
+    // Called when the view starts or stops being shown, e.g. to run the
+    // progress bar only while it can be seen.
+    virtual void OnVisibilityChanged(bool /*visible*/) {}
+
     // Replaces the old layer with a fresh, empty one of this size.
     void ResetLayer(float width, float height);
     // For views whose height follows their content: set it once laid out.

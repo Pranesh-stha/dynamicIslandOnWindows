@@ -45,6 +45,7 @@ add_library(IslandCore STATIC
     src/render/IslandVisuals.cpp
     src/render/Motion.cpp
     src/render/Widgets.cpp
+    src/views/ControlCenter.cpp
     src/views/ControlKitDemo.cpp
     src/views/IdleView.cpp
     src/views/PeekView.cpp
@@ -53,6 +54,8 @@ add_library(IslandCore STATIC
     src/platform/Settings.cpp
     src/platform/Tray.cpp
     src/services/FullscreenWatcher.cpp
+    src/services/MediaService.cpp
+    src/services/MediaState.cpp
     src/services/WindowClassifier.cpp
 )
 island_defaults(IslandCore)
@@ -80,5 +83,5 @@ target_link_libraries(Island PRIVATE IslandCore)
 enable_testing()
 add_executable(IslandTests tests/UnitTests.cpp)
 island_defaults(IslandTests)
-target_link_libraries(IslandTests PRIVATE IslandCore)
+target_link_libraries(IslandTests PRIVATE IslandCore shlwapi)
 add_test(NAME unit COMMAND IslandTests)

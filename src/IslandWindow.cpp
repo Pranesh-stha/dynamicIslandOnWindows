@@ -9,6 +9,7 @@
 
 #include "AppMessages.h"
 #include "platform/Log.h"
+#include "views/ControlCenter.h"
 #include "views/ControlKitDemo.h"
 #include "views/IdleView.h"
 #include "views/PeekView.h"
@@ -131,7 +132,8 @@ bool IslandWindow::Create(HINSTANCE instance)
 
     const auto content = m_visuals.Content();
     m_idleView = std::make_unique<IdleView>(m_ui, content);
-    m_peekView = std::make_unique<PeekView>(m_ui, content);
+    m_peekView = std::make_unique<PeekView>(m_ui, content, m_actions);
+    m_controlCenter = std::make_unique<ControlCenter>(m_ui, content, m_actions);
     m_demoView = std::make_unique<ControlKitDemo>(m_ui, content);
 
     PlaceOnPrimaryMonitor();
@@ -189,6 +191,7 @@ void IslandWindow::Rebuild()
     m_visuals.ApplyGlass(m_glass, m_effectsEnabled, m_scale);
     m_idleView->Build();
     m_peekView->Build();
+    m_controlCenter->Build();
     m_demoView->Build();
     m_windowSize = {};
     ShowState(false);
@@ -244,6 +247,22 @@ void IslandWindow::Pose(IslandPose pose)
     m_machine.ShowDirectly(target);
 }
 
+void IslandWindow::SetMedia(const MediaState& media)
+{
+    m_media = media;
+    if (State() != IslandState::Hidden)
+    {
+        PushMedia();
+    }
+}
+
+void IslandWindow::PushMedia()
+{
+    m_idleView->SetMedia(m_media);
+    m_peekView->SetMedia(m_media);
+    m_controlCenter->SetMedia(m_media);
+}
+
 void IslandWindow::OpenControlKitDemo()
 {
     const bool switching = !m_showDemo && State() == IslandState::Expanded;
@@ -283,6 +302,10 @@ void IslandWindow::EnterState(IslandState from, IslandState to)
         ReleaseCapture();
     }
     m_backgroundPress = false;
+    if (from == IslandState::Expanded && !m_posed)
+    {
+        m_showDemo = false;  // the next click opens the control center again
+    }
 
     switch (to)
     {
@@ -299,6 +322,7 @@ void IslandWindow::EnterState(IslandState from, IslandState to)
     case IslandState::Idle:
         if (from == IslandState::Hidden)
         {
+            PushMedia();  // catch up on what changed while hidden
             ShowState(false);
             ShowNow();
         }
@@ -322,6 +346,11 @@ void IslandWindow::EnterState(IslandState from, IslandState to)
         }
         break;
     }
+
+    if (m_onStateChanged)
+    {
+        m_onStateChanged(to);
+    }
 }
 
 void IslandWindow::ShowNow()
@@ -336,7 +365,7 @@ void IslandWindow::ShowNow()
 
 View* IslandWindow::ExpandedView() const
 {
-    return m_demoView.get();
+    return m_showDemo ? static_cast<View*>(m_demoView.get()) : static_cast<View*>(m_controlCenter.get());
 }
 
 View* IslandWindow::ViewFor(IslandState state) const
@@ -385,7 +414,7 @@ void IslandWindow::ShowState(bool animate)
 
     View* shown = ViewFor(state);
     for (View* view : { static_cast<View*>(m_idleView.get()), static_cast<View*>(m_peekView.get()),
-                        static_cast<View*>(m_demoView.get()) })
+                        static_cast<View*>(m_controlCenter.get()), static_cast<View*>(m_demoView.get()) })
     {
         const bool visible = view == shown;
         if (!animate || view->Visible() != visible)

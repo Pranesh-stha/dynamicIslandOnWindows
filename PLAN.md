@@ -4,9 +4,9 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 
 ## 0. Current status (read this first)
 
-- **Current phase:** Phase 3 is built and verified: glass pill, spring morphs Idle ↔ Peek ↔ Expanded, slim line, and the control kit (tray → "Control kit demo"). **Next: Phase 4, "Now playing."**
-- Hands-on checks are left for you in the Phase 1–3 lists (real games, PresentMon, how the motion *feels*). It doesn't start at login yet (Phase 7).
-- **Last updated:** 2026-10-24 07:47 NPT (UTC+05:45)
+- **Current phase:** Phase 4 is built and verified: now playing in the idle pill, Peek and the control center (a click opens it). **Next: Phase 5, "Quick controls."**
+- Hands-on checks are left for you in the Phase 1–4 lists (real games, PresentMon, how the motion *feels*, Media Player and Chrome/Edge). It doesn't start at login yet (Phase 7).
+- **Last updated:** 2026-10-24 08:06 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
@@ -15,7 +15,7 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
   - The exe ends up in `build\Debug\Island.exe` or `build\Release\Island.exe`.
   - In VS Code, F5 closes any running island, builds the project and starts the debugger.
   - `Island.exe --quit` closes a running island. Launching a new copy replaces the old one.
-- **Tests:** `ctest --preset debug` (or `release`) runs the unit tests. `pwsh -File tests\fullscreen_test.ps1` runs the game-safety test with real windows (it clicks its own test windows, so hands off the mouse for ~15 s). `pwsh -File tests\visual_check.ps1` takes screenshots and measures the morphs *hands-free* (no mouse, no focus change).
+- **Tests:** `ctest --preset debug` (or `release`) runs the unit tests. `pwsh -File tests\fullscreen_test.ps1` runs the game-safety test with real windows (it clicks its own test windows, so hands off the mouse for ~15 s). `pwsh -File tests\visual_check.ps1` takes screenshots and measures the morphs *hands-free* (no mouse, no focus change). `pwsh -File tests\media_test.ps1` plays a silent test track to check now playing (your own music is never touched).
 - **Poses:** `Island.exe --pose idle|peek|expanded|demo` holds the island in one state (for screenshots); tray → "Keep open (for tuning)" does the same while you edit settings.
 - **Log and settings:** the tray menu opens `config\settings.json` (edits apply live) and the log (`%LOCALAPPDATA%\Island\island.log`).
 - **Rule for every session:** after any meaningful change, add an entry at the top of the update log (§12) and refresh this section.
@@ -189,11 +189,13 @@ windowsUI/
       Widgets.*              control kit: label, icon button, toggle tile, segmented, slider
       Glyphs.h               Segoe Fluent Icons characters
     views/                   what each state shows (one layer each)
-      IdleView.*  PeekView.*  ControlKitDemo.*
+      IdleView.*  PeekView.*  ControlCenter.*  ControlKitDemo.*
+      Actions.h              what the views' buttons ask the app to do
     services/                ← anything slow runs on background threads
       FullscreenWatcher.*    game / fullscreen detection (event-driven)
+      MediaState.*           what's playing + pure rules: which app, app names, position, artwork decoding
       WindowClassifier.*     pure rule: normal / maximized / fullscreen (unit-tested)
-      MediaService.*         now playing (GlobalSystemMediaTransportControls)
+      MediaService.*         now playing (GlobalSystemMediaTransportControls), events -> UI thread
       AudioService.*         volume (Core Audio)
       BrightnessService.*    laptop (WMI) + external monitor (DDC/CI)
       RadioService.*         Wi-Fi / Bluetooth (Windows.Devices.Radios)
@@ -206,6 +208,8 @@ windowsUI/
     UnitTests.cpp            pure-logic tests, run by ctest
     fullscreen_test.ps1      game-safety test with real windows
     visual_check.ps1         hands-free screenshots + morph timing
+    media_test.ps1           silent test media session
+    TestHelpers.cs           backdrop, poses, screenshots for the scripts above
 ```
 
 **Threading rule:** the UI thread owns the window and the compositor, and it never waits on anything slow. Services do their work in the background and post results back through the `DispatcherQueue`.
@@ -271,15 +275,17 @@ This comes before any visual polish, so you can leave it running while gaming fr
   - ✅ 93 unit checks pass, incl. the state machine (found and fixed a stale-hover-timer bug) and the pointer routing / slider rules.
   - ⬜ (you) Hover, click, drag every control in the demo; check the slim line over a maximized browser.
 
-### Phase 4: Now playing
-- Pick the right media session: one that is playing beats one that is merely recent.
-- Show title, artist and artwork, with play/pause/next/previous.
-- Decode artwork at a small size (about 2× its display size).
-- The compositor animates the progress bar, so there are no per-second redraws.
+### Phase 4: Now playing ✅ built (2026-10-24)
+- ✅ `MediaService` listens to Windows' media sessions (the same source as the volume flyout). Events arrive on background threads and are handed to the UI thread. Each "sessions changed" notice gets one follow-up look 1 s later, and every open of the island re-syncs everything (E4).
+- ✅ Which app to show (`PickSession`, unit-tested): your manual choice → one that is playing (the one you most recently pressed play in) → the one already shown (paused apps don't take turns as Windows reshuffles them) → Windows' own choice. Metadata updates don't count as activity, because browsers send them constantly.
+- ✅ Idle pill: tiny artwork + a still "sound bars" mark (dimmed while paused). Peek: artwork, title, "artist · app", play/pause + next. Control center: 64 DIP artwork, title, artist, app name (click to switch when several apps have media, E1), previous/play-pause/next, progress line.
+- ✅ Artwork decoded off the UI thread to 192 px, the middle square cut out of 16:9 thumbnails, matched to the song (late artwork for an old song is dropped, E2), crossfaded in; placeholder note while loading.
+- ✅ The compositor glides the progress line linearly to the end of the song. It only runs while the panel is visible (no frames in idle), and it's hidden when the app gives no timeline (E3).
+- ✅ Play/pause flips the icon at once (play ↔ pause morph); the real state is re-read 1.5 s later in case the app ignored it.
 - **Done when:**
-  - It works with Spotify, YouTube in Chrome/Edge, and Media Player.
-  - Switching apps updates it within 1 s.
-  - Memory is flat after an hour of track changes.
+  - ✅ Spotify: your real session shows title, artist, artwork and the paused state. ✅ Brave (Chromium) is detected and followed. ⬜ (you) Chrome/Edge YouTube and Media Player.
+  - ✅ Switching: a silent test player (`media_test.ps1`) takes over within ~0.1 s of starting to play (~0.5–0.7 s including starting the player); on pause the island moves to the app that's really playing; when it closes it moves on.
+  - ✅ RAM 31 MB with Spotify + Brave sessions, idle CPU 0.0 ms over 20 s; 119 unit checks pass (incl. the artwork crop). ⬜ (later, Phase 7 soak) memory flat after an hour of track changes.
 
 ### Phase 5: Quick controls
 - **Volume** slider and mute (Core Audio). It follows device changes such as plugging in headphones or connecting a Bluetooth headset.
@@ -475,6 +481,8 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-24 | "On" colour = the Windows accent, unless it's grey (then blue `#409CFF`); overridable with `glass.accent` |
 | 2026-10-24 | `--pose <state>` and tray → "Keep open (for tuning)" pin the island in one state. Visual tests use poses, so they never move your mouse or take focus |
 | 2026-10-24 | The control kit demo panel stays available from the tray after Phase 4/5 replace it as the click target |
+| 2026-10-24 | Media: "activity" = starting to play (not metadata updates). When nothing plays, keep the app already shown. The app name in the control center switches apps when several have media |
+| 2026-10-24 | The progress line is a compositor glide that only runs while the panel is visible; no elapsed/remaining times (they'd need a redraw every second) |
 
 ## 12. Update log
 
@@ -482,6 +490,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 08:06 | **Phase 4 built.** New: `services/MediaService.*`, `services/MediaState.*` (session picking, app names, position, artwork decoding), `views/ControlCenter.*`, `views/Actions.h`, widgets `Artwork`, `ProgressBar`, `TextButton`; idle and Peek views show media; a click now opens the control center (the demo moved to the tray only); `tests/media_test.ps1`, `tests/TestHelpers.cs` (backdrop shrunk to 1000×620). **Checked:** builds with no warnings; 119 unit checks pass; your Spotify session renders with artwork; the silent test player is picked up within ~0.1 s of playing and released correctly; 31 MB RAM, 0.0 ms idle CPU. Found and fixed: `small` is a Windows macro; paused apps flip-flopped as Windows reshuffled its "current" session (now sticky); browser metadata updates stole the island from the app you'd just started (only play-starts count now); a missed event could leave another app's "playing" state stale (re-read on every sync, plus one follow-up look after each change notice). Note: a test run held the island in Peek over your browser's toolbar and caught one of your clicks there. Tests with poses now run as rarely as possible. |
 | 2026-10-24 07:47 | **Phase 3 built.** New: `StateMachine.*`, `render/Graphics.*`, `render/Effects.*`, `render/Motion.*`, `render/Widgets.*`, `render/Glyphs.h`, `views/*` (idle, Peek placeholder, control kit demo), `tests/visual_check.ps1`; `IslandWindow` and `IslandVisuals` rewritten; settings gained `layout`, `glass` and `motion`; tray gained "Control kit demo" and "Keep open (for tuning)"; `--pose`. **Checked:** Release and Debug build with no warnings; 93 unit checks pass; `fullscreen_test.ps1` 8/8 again (slim line 5 px tall); hands-free visual check: screenshots of idle, Peek, control center, demo; morphs ~200–225 ms, 2–4 px overshoot, a reversal never jumps; **25 MB RAM, 0.0 ms idle CPU**. Found and fixed: the compositor refuses the colour-matrix effect unless all its properties are given; `RoundRect`/`DrawText` names clash with old Windows functions; a queued hover timer could open Peek after a window drag; your grey accent made "on" invisible. ⚠ A mouse-driven test run once found its test window behind your Chrome and clicked ~10 times near the middle of the primary screen before I added the "only click our own windows" guard. Those clicks may have landed in your Chrome window, so please check it. Tests that click now refuse to click anything but their own windows, and the visual test no longer clicks at all. **Not yet checked:** the feel by hand, and "transparency effects off" (it would change your desktop). |
 | 2026-10-24 07:03 | **Phase 2 built.** New: `services/FullscreenWatcher.*` (foreground + under-the-island window, scoped move/resize hooks, taskbar `ABN_FULLSCREENAPP`, `SHQueryUserNotificationState`, blocklist), `services/WindowClassifier.*`, `platform/Settings.*` (settings.json, live reload), `platform/Log.*`, `App.*`, `config/settings.json`, `tests/UnitTests.cpp`, `tests/fullscreen_test.ps1`. `IslandWindow` now hides instantly and shows after the delay; the tray menu opens settings and the log. **Checked:** Release and Debug build with no warnings; 32 unit checks pass; all 8 checks of `fullscreen_test.ps1` pass (hide 0–12 ms, show after 507 ms); blocklist hides at once; a broken settings edit keeps the old settings; **idle CPU 0.0 ms over 20 s, 2.0 MB RAM, handle count steady**. Found and fixed: the log file was locked while Island ran. Experiment: cursor-move events are reported by a system thread, not the thread that moved the pointer, so the thread-scoped hooks stay quiet during games. **Not yet checked:** real games and PresentMon (you). |
 | 2026-10-23 20:29 | **Phase 1 built.** New files: `IslandWindow.*` (window flags, top-center placement on the primary monitor, DPI, display-change handling, no-activate), `render/IslandVisuals.*` (compositor glass pill: blur-behind brush + tint + pill clip), `platform/Tray.*` (tray icon, Quit menu, Explorer-restart handling), `AppMessages.h`, `app.manifest` (Per-Monitor V2). `main.cpp` now handles single instance, replace-on-launch and `--quit`. The Phase 0 demo window was removed; it's in commit `f37f252`. **Checked (Release):** builds with no warnings; 250×51 px at the exact top-center of the Legion (125 %); always-on-top, no taskbar entry and never-takes-focus flags all set; launching doesn't steal focus; **1.9 MB RAM**; blur verified with a screenshot over a striped test pattern; a second launch replaces the first; `--quit` exits cleanly with code 0. **Not yet checked:** Debug build linking (blocked while your Phase 0 debug session was running), and the unplug/Alt+Tab/click checks for you. |

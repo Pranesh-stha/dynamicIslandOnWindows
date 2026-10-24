@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <Unknwn.h>
 
+#include <functional>
 #include <memory>
 
 #include <winrt/Windows.System.h>
@@ -15,10 +16,13 @@
 #include "render/Graphics.h"
 #include "render/IslandVisuals.h"
 #include "render/Widgets.h"
+#include "services/MediaState.h"
+#include "views/Actions.h"
 
 class View;
 class IdleView;
 class PeekView;
+class ControlCenter;
 class ControlKitDemo;
 
 // The island's own window: borderless, transparent, always on top, and it
@@ -50,6 +54,16 @@ public:
 
     // The user is dragging or resizing some window.
     void SetWindowDragActive(bool active);
+
+    // What the views' buttons do. Set once, before anything is clicked.
+    IslandActions& Actions() { return m_actions; }
+
+    // Called after every state change (e.g. to re-sync media when it opens).
+    void OnStateChanged(std::function<void(IslandState)> handler) { m_onStateChanged = std::move(handler); }
+
+    // What's playing. While hidden this is only stored: nothing is redrawn
+    // until the island comes back.
+    void SetMedia(const MediaState& media);
 
     // Opens the panel with one of every control (tray menu).
     void OpenControlKitDemo();
@@ -90,6 +104,7 @@ private:
     void ShowState(bool animate);
     void ResizeWindow(float width, float height);
     void ShowNow();
+    void PushMedia();
     Motion::float2 ToLayer(POINT point, const View& view) const;
 
     HWND m_hwnd{};
@@ -107,8 +122,13 @@ private:
 
     std::unique_ptr<IdleView> m_idleView;
     std::unique_ptr<PeekView> m_peekView;
+    std::unique_ptr<ControlCenter> m_controlCenter;
     std::unique_ptr<ControlKitDemo> m_demoView;
-    bool m_showDemo = true;  // until Phase 4 there's no real control center yet
+    bool m_showDemo = false;  // the expanded state shows the demo instead of the control center
+
+    IslandActions m_actions;
+    MediaState m_media;
+    std::function<void(IslandState)> m_onStateChanged;
 
     winrt::Windows::UI::ViewManagement::UISettings m_uiSettings{ nullptr };
     winrt::event_token m_effectsChangedToken{};

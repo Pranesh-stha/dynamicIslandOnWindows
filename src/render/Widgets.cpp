@@ -1,6 +1,7 @@
 #include "render/Widgets.h"
 
 #include <algorithm>
+#include <chrono>
 
 namespace wuc = winrt::Windows::UI::Composition;
 using winrt::Windows::UI::Color;
@@ -157,7 +158,7 @@ Control* ControlHost::Hit(float x, float y) const
 {
     for (auto it = m_controls.rbegin(); it != m_controls.rend(); ++it)
     {
-        if ((*it)->Enabled() && (*it)->Contains(x, y))
+        if ((*it)->Enabled() && (*it)->Interactive() && (*it)->Contains(x, y))
         {
             return *it;
         }
@@ -921,4 +922,178 @@ bool Slider::OnWheel(float notches)
         }
     }
     return true;
+}
+
+// --- TextButton --------------------------------------------------------------
+
+TextButton::TextButton(const Ui& ui, float sizeDip, DWRITE_FONT_WEIGHT weight)
+    : Control(ui), m_label(ui, sizeDip, weight)
+{
+    m_highlight = RoundedRect(ui, 1.0f, 1.0f, 1.0f, White(0.12f));
+    m_highlight.visual.Opacity(0.0f);
+    m_root.Children().InsertAtTop(m_highlight.visual);
+    m_root.Children().InsertAtTop(m_label.Visual());
+}
+
+float TextButton::SetText(std::wstring_view text, float maxWidthPx)
+{
+    const float padX = m_ui.Px(6.0f);
+    m_label.SetMaxWidth(std::max(1.0f, maxWidthPx - 2.0f * padX));
+    m_label.SetText(text);
+    const float width = text.empty() ? 0.0f : m_label.Width() + 2.0f * padX;
+    SetBounds(m_x, m_y, width, m_label.Height() + m_ui.Px(2.0f));
+    return width;
+}
+
+void TextButton::SetTextOpacity(float opacity)
+{
+    m_label.Visual().Opacity(opacity);
+}
+
+void TextButton::Layout()
+{
+    m_highlight.Resize(m_width, m_height, m_height / 2.0f);
+    m_label.SetPosition(m_ui.Px(6.0f), std::round((m_height - m_label.Height()) / 2.0f));
+}
+
+void TextButton::OnHoverChanged(bool hovered)
+{
+    Motion::EaseTo(m_highlight.visual, L"Opacity", hovered ? 1.0f : 0.0f, m_ui.motion->hoverFadeMs);
+}
+
+void TextButton::OnPressChanged(bool pressed)
+{
+    Motion::SpringTo(m_root, L"Scale", pressed ? float3{ 0.95f, 0.95f, 1.0f } : float3{ 1.0f, 1.0f, 1.0f }, m_ui.motion->press);
+}
+
+void TextButton::OnClick()
+{
+    if (onClick)
+    {
+        onClick();
+    }
+}
+
+// --- Artwork -----------------------------------------------------------------
+
+Artwork::Artwork(const Ui& ui, float sizeDip, float radiusDip)
+    : m_ui(ui), m_size(ui.EvenPx(sizeDip)), m_note(ui, sizeDip * 0.38f, DWRITE_FONT_WEIGHT_NORMAL, true)
+{
+    const float radius = ui.Px(radiusDip);
+    m_root = ui.compositor.CreateContainerVisual();
+    m_root.Size({ m_size, m_size });
+
+    m_placeholder = RoundedRect(ui, m_size, m_size, radius, White(0.12f));
+    m_root.Children().InsertAtTop(m_placeholder.visual);
+    m_note.SetText(L"\xE8D6");  // a music note
+    m_note.SetPosition(std::round((m_size - m_note.Width()) / 2.0f), std::round((m_size - m_note.Height()) / 2.0f));
+    m_note.Visual().Opacity(0.7f);
+    m_root.Children().InsertAtTop(m_note.Visual());
+
+    // The picture is cut to the same rounded shape.
+    auto shape = ui.compositor.CreateRoundedRectangleGeometry();
+    shape.Size({ m_size, m_size });
+    shape.CornerRadius({ radius, radius });
+    auto images = ui.compositor.CreateContainerVisual();
+    images.Size({ m_size, m_size });
+    images.Clip(ui.compositor.CreateGeometricClip(shape));
+    for (int i = 0; i < 2; ++i)
+    {
+        m_surfaces[i] = ui.graphics->CreateSurface();
+        auto brush = ui.compositor.CreateSurfaceBrush(m_surfaces[i]);
+        brush.Stretch(wuc::CompositionStretch::Fill);
+        m_images[i] = ui.compositor.CreateSpriteVisual();
+        m_images[i].Size({ m_size, m_size });
+        m_images[i].Brush(brush);
+        m_images[i].Opacity(0.0f);
+        images.Children().InsertAtTop(m_images[i]);
+    }
+    m_root.Children().InsertAtTop(images);
+}
+
+void Artwork::SetPosition(float x, float y)
+{
+    m_root.Offset({ std::round(x), std::round(y), 0.0f });
+}
+
+void Artwork::SetImage(IWICBitmapSource* image, uint64_t id)
+{
+    if (id == m_id)
+    {
+        return;
+    }
+    m_id = id;
+    const int fade = 220;
+    if (!image)
+    {
+        Motion::EaseTo(m_images[0], L"Opacity", 0.0f, fade);
+        Motion::EaseTo(m_images[1], L"Opacity", 0.0f, fade);
+        return;
+    }
+
+    // Draw into the hidden layer, then crossfade to it.
+    const int back = 1 - m_front;
+    m_ui.graphics->Draw(m_surfaces[back], m_size, m_size, [&](ID2D1DeviceContext* context)
+    {
+        winrt::com_ptr<ID2D1Bitmap> bitmap;
+        if (SUCCEEDED(context->CreateBitmapFromWicBitmap(image, nullptr, bitmap.put())))
+        {
+            const D2D1_RECT_F target{ 0.0f, 0.0f, m_size, m_size };
+            context->DrawBitmap(bitmap.get(), &target, 1.0f, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC, nullptr, nullptr);
+        }
+    });
+    m_images[back].StopAnimation(L"Opacity");
+    m_images[back].Opacity(0.0f);
+    Motion::EaseTo(m_images[back], L"Opacity", 1.0f, fade);
+    Motion::EaseTo(m_images[m_front], L"Opacity", 0.0f, fade, fade / 2);
+    m_front = back;
+}
+
+// --- ProgressBar -------------------------------------------------------------
+
+ProgressBar::ProgressBar(const Ui& ui)
+{
+    m_root = ui.compositor.CreateContainerVisual();
+    m_shape = ui.compositor.CreateRoundedRectangleGeometry();
+    m_root.Clip(ui.compositor.CreateGeometricClip(m_shape));
+    m_track = ui.compositor.CreateSpriteVisual();
+    m_track.Brush(ui.compositor.CreateColorBrush(White(0.2f)));
+    m_fill = ui.compositor.CreateSpriteVisual();
+    m_fill.Brush(ui.compositor.CreateColorBrush(White(0.9f)));
+    m_fill.Scale({ 0.0f, 1.0f, 1.0f });
+    m_root.Children().InsertAtTop(m_track);
+    m_root.Children().InsertAtTop(m_fill);
+}
+
+void ProgressBar::SetBounds(float x, float y, float width, float height)
+{
+    m_root.Offset({ std::round(x), std::round(y), 0.0f });
+    m_root.Size({ width, height });
+    m_shape.Size({ width, height });
+    m_shape.CornerRadius({ height / 2.0f, height / 2.0f });
+    m_track.Size({ width, height });
+    m_fill.Size({ width, height });
+}
+
+void ProgressBar::Show(double fraction, bool running, double secondsLeft)
+{
+    const float start = static_cast<float>(std::clamp(fraction, 0.0, 1.0));
+    m_fill.StopAnimation(L"Scale.X");
+    m_fill.Scale({ start, 1.0f, 1.0f });
+    if (running && secondsLeft > 0.05 && start < 1.0f)
+    {
+        // A linear glide from here to the end, timed to the rest of the song.
+        const auto compositor = m_fill.Compositor();
+        auto animation = compositor.CreateScalarKeyFrameAnimation();
+        const auto linear = compositor.CreateLinearEasingFunction();
+        animation.InsertKeyFrame(0.0f, start, linear);
+        animation.InsertKeyFrame(1.0f, 1.0f, linear);
+        animation.Duration(std::chrono::duration_cast<winrt::Windows::Foundation::TimeSpan>(std::chrono::duration<double>(secondsLeft)));
+        m_fill.StartAnimation(L"Scale.X", animation);
+    }
+}
+
+void ProgressBar::Freeze()
+{
+    m_fill.StopAnimation(L"Scale.X");  // keeps the value it had reached
 }

@@ -6,12 +6,15 @@
 #include <windows.h>
 #include <Unknwn.h>
 #include <DispatcherQueue.h>
+#include <Shlwapi.h>
 
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.System.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <string>
 #include <utility>
@@ -20,6 +23,7 @@
 #include "StateMachine.h"
 #include "platform/Settings.h"
 #include "render/Widgets.h"
+#include "services/MediaState.h"
 #include "services/WindowClassifier.h"
 
 namespace
@@ -423,6 +427,104 @@ namespace
         }
     }
 
+    void TestMedia()
+    {
+        // Picking which app's media to show (PLAN.md E1).
+        CHECK(PickSession({}, -1, -1) == -1);
+        // Playing beats paused, even if the paused one changed more recently or is shown.
+        CHECK(PickSession({ { false, 900, true }, { true, 100, false } }, -1, 0) == 1);
+        // Two playing: the most recently active.
+        CHECK(PickSession({ { true, 100, false }, { true, 300, false }, { true, 200, false } }, -1, -1) == 1);
+        // Nothing playing: keep the one shown (paused apps don't take turns as
+        // Windows reshuffles them), else the one Windows shows, else the most recent.
+        CHECK(PickSession({ { false, 900, true }, { false, 100, false } }, -1, 1) == 1);
+        CHECK(PickSession({ { false, 900, false }, { false, 100, true } }, -1, -1) == 1);
+        CHECK(PickSession({ { false, 100, false }, { false, 900, false } }, -1, -1) == 1);
+        // A manual choice wins while it exists.
+        CHECK(PickSession({ { true, 900, false }, { false, 100, false } }, 1, 0) == 1);
+        CHECK(PickSession({ { true, 900, false } }, 5, -1) == 0);
+
+        // Friendly names for the ids Windows gives players.
+        CHECK(FriendlyAppName(L"Spotify.exe") == L"Spotify");
+        CHECK(FriendlyAppName(L"chrome") == L"Chrome");
+        CHECK(FriendlyAppName(L"MSEdge") == L"Edge");
+        CHECK(FriendlyAppName(L"Microsoft.ZuneMusic_8wekyb3d8bbwe!Microsoft.ZuneMusic") == L"Media Player");
+        CHECK(FriendlyAppName(L"308046B0AF4A39CB") == L"Firefox");
+        CHECK(FriendlyAppName(L"C:\\Games\\coolplayer.exe") == L"Coolplayer");
+        CHECK(FriendlyAppName(L"Contoso.MusicApp_abc123!App") == L"MusicApp");
+        CHECK(FriendlyAppName(L"") == L"Media");
+
+        // Where the song is now: counted on from when the app last said, only while playing.
+        using namespace std::chrono_literals;
+        MediaState media;
+        media.hasTimeline = true;
+        media.durationSeconds = 200.0;
+        media.positionSeconds = 50.0;
+        const auto then = winrt::clock::now();
+        media.positionMeasuredAt = then;
+        media.playing = true;
+        CHECK(std::abs(media.PositionAt(then + 10s) - 60.0) < 0.001);
+        media.rate = 2.0;
+        CHECK(std::abs(media.PositionAt(then + 10s) - 70.0) < 0.001);
+        CHECK(media.PositionAt(then + 1000s) == 200.0);  // never past the end
+        media.playing = false;
+        CHECK(media.PositionAt(then + 10s) == 50.0);  // paused: it stays put
+        media.playing = true;
+        media.positionMeasuredAt = {};  // the app never said when
+        CHECK(media.PositionAt(then) == 50.0);
+    }
+
+    void TestArtworkDecode()
+    {
+        // A 400x300 picture (like a video thumbnail): a red strip down the
+        // left 40 px, blue everywhere else, as an uncompressed BMP file.
+        constexpr int width = 400, height = 300;
+        std::vector<uint8_t> file(54 + width * height * 3);
+        BITMAPFILEHEADER fileHeader{ 0x4D42, static_cast<DWORD>(file.size()), 0, 0, 54 };
+        BITMAPINFOHEADER info{ sizeof(BITMAPINFOHEADER), width, height, 1, 24, BI_RGB };
+        std::memcpy(file.data(), &fileHeader, 14);
+        std::memcpy(file.data() + 14, &info, 40);
+        for (int y = 0; y < height; ++y)
+        {
+            for (int x = 0; x < width; ++x)
+            {
+                uint8_t* pixel = file.data() + 54 + (y * width + x) * 3;  // blue, green, red
+                pixel[0] = x < 40 ? 0 : 255;
+                pixel[1] = 0;
+                pixel[2] = x < 40 ? 255 : 0;
+            }
+        }
+        winrt::com_ptr<IStream> stream;
+        stream.attach(SHCreateMemStream(file.data(), static_cast<UINT>(file.size())));
+        const auto art = DecodeArtwork(stream.get(), 192);
+        UINT artWidth = 0, artHeight = 0;
+        art->GetSize(&artWidth, &artHeight);
+        CHECK(artWidth == 192 && artHeight == 192);
+
+        // Scaled to 256x192, then the middle 192 columns: the red strip (now
+        // 26 px wide) is cut off, so the left edge is blue.
+        std::vector<uint8_t> pixels(192 * 192 * 4);
+        CHECK(SUCCEEDED(art->CopyPixels(nullptr, 192 * 4, static_cast<UINT>(pixels.size()), pixels.data())));
+        auto at = [&](int x, int y) { return &pixels[(y * 192 + x) * 4]; };  // blue, green, red, alpha
+        CHECK(at(1, 96)[0] > 200 && at(1, 96)[2] < 60);
+        CHECK(at(190, 96)[0] > 200 && at(190, 96)[3] == 255);
+
+        // A broken file is an error, never a crash.
+        std::vector<uint8_t> junk(100, 7);
+        winrt::com_ptr<IStream> broken;
+        broken.attach(SHCreateMemStream(junk.data(), static_cast<UINT>(junk.size())));
+        bool threw = false;
+        try
+        {
+            DecodeArtwork(broken.get(), 192);
+        }
+        catch (const winrt::hresult_error&)
+        {
+            threw = true;
+        }
+        CHECK(threw);
+    }
+
     // The compositor needs a dispatcher queue on its thread, as in the app.
     winrt::Windows::System::DispatcherQueueController CreateDispatcherQueue()
     {
@@ -441,6 +543,8 @@ int main()
     TestClassifier();
     TestSettings();
     TestStateMachine();
+    TestMedia();
+    TestArtworkDecode();
 
     // Controls need a real compositor (no window: nothing is shown).
     const auto queue = CreateDispatcherQueue();

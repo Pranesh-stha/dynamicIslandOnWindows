@@ -103,6 +103,10 @@ public:
     bool Enabled() const { return m_enabled; }
     void SetEnabled(bool enabled);
 
+    // Not interactive: ignores the mouse but, unlike disabled, isn't dimmed.
+    bool Interactive() const { return m_interactive; }
+    void SetInteractive(bool interactive) { m_interactive = interactive; }
+
     // Pointer input, sent by ControlHost. Coordinates are relative to the control.
     // Feedback starts on press; the action happens on release, and only if the
     // pointer is still on the control (dragging off cancels, as on macOS/iOS).
@@ -124,6 +128,7 @@ protected:
     winrt::Windows::UI::Composition::ContainerVisual m_root{ nullptr };
     float m_x = 0.0f, m_y = 0.0f, m_width = 0.0f, m_height = 0.0f;
     bool m_enabled = true;
+    bool m_interactive = true;
 };
 
 // Routes the mouse to the right control inside one layer: hover, press,
@@ -331,4 +336,79 @@ private:
     float m_value = 0.0f;
     bool m_dragging = false;
     bool m_hovered = false;
+};
+
+// A small clickable piece of text with a pill-shaped hover highlight (the
+// app name under the song, which switches apps when several play media).
+class TextButton : public Control
+{
+public:
+    TextButton(const Ui& ui, float sizeDip, DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_NORMAL);
+
+    // Sizes the button to fit the text; returns the new width in pixels.
+    float SetText(std::wstring_view text, float maxWidthPx);
+    void SetTextOpacity(float opacity);
+
+    std::function<void()> onClick;
+
+    void OnHoverChanged(bool hovered) override;
+    void OnPressChanged(bool pressed) override;
+    void OnClick() override;
+
+protected:
+    void Layout() override;
+
+private:
+    RoundedRect m_highlight;
+    Label m_label;
+};
+
+// Album artwork: a rounded image that crossfades when the song changes,
+// with a music-note placeholder while there's none.
+class Artwork
+{
+public:
+    Artwork(const Ui& ui, float sizeDip, float radiusDip);
+
+    winrt::Windows::UI::Composition::ContainerVisual Visual() const { return m_root; }
+    float Size() const { return m_size; }
+    void SetPosition(float x, float y);
+
+    // `id` identifies the picture; the same id again does nothing, so this
+    // can be called on every update.
+    void SetImage(IWICBitmapSource* image, uint64_t id);
+
+private:
+    const Ui& m_ui;
+    float m_size;
+    winrt::Windows::UI::Composition::ContainerVisual m_root{ nullptr };
+    RoundedRect m_placeholder;
+    Label m_note;
+    winrt::Windows::UI::Composition::SpriteVisual m_images[2]{ nullptr, nullptr };
+    winrt::Windows::UI::Composition::CompositionDrawingSurface m_surfaces[2]{ nullptr, nullptr };
+    int m_front = 0;
+    uint64_t m_id = ~0ull;
+};
+
+// A thin progress line. While playing, the compositor glides it to the end
+// on its own; nothing is redrawn every second.
+class ProgressBar
+{
+public:
+    explicit ProgressBar(const Ui& ui);
+
+    winrt::Windows::UI::Composition::ContainerVisual Visual() const { return m_root; }
+    void SetBounds(float x, float y, float width, float height);
+
+    // Shows `fraction` (0..1) now and, while `running`, moves linearly to the
+    // end over `secondsLeft`.
+    void Show(double fraction, bool running, double secondsLeft);
+    // Stops moving where it is (when the panel closes: no frames while idle).
+    void Freeze();
+
+private:
+    winrt::Windows::UI::Composition::ContainerVisual m_root{ nullptr };
+    winrt::Windows::UI::Composition::CompositionRoundedRectangleGeometry m_shape{ nullptr };
+    winrt::Windows::UI::Composition::SpriteVisual m_track{ nullptr };
+    winrt::Windows::UI::Composition::SpriteVisual m_fill{ nullptr };
 };

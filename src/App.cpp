@@ -55,6 +55,22 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
     ApplySettings();
     m_settings.Watch([this] { ApplySettings(); });
 
+    // Now playing: the service reports changes, the island's buttons send commands.
+    IslandActions& actions = m_island.Actions();
+    actions.playPause = [this] { m_media.PlayPause(); };
+    actions.next = [this] { m_media.Next(); };
+    actions.previous = [this] { m_media.Previous(); };
+    actions.nextMediaSession = [this] { m_media.ShowNextSession(); };
+    m_media.Start([this](const MediaState& media) { m_island.SetMedia(media); });
+    m_island.OnStateChanged([this](IslandState state)
+    {
+        // Windows' media events occasionally stop; re-read when the island opens.
+        if (state == IslandState::Peek || state == IslandState::Expanded)
+        {
+            m_media.Refresh();
+        }
+    });
+
     // If a game is already fullscreen when Island starts, stay hidden.
     m_island.SetSlim(m_fullscreen.Current().slim);
     m_island.SetFullscreenHidden(m_fullscreen.Current().hide, /*immediately*/ true);
