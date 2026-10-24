@@ -4,10 +4,11 @@ Working name: **Island**. This is a living plan, and we update it whenever a dec
 
 ## 0. Current status (read this first)
 
-- **Current phase:** Phases 2–6 are built and verified, including 5b (wide control center), 5c (auto-hide) and **6 (displays + quick toggles)**. The island hides for games and stays out of sight until you push the mouse to the top-middle; then it slides down, opens Peek on hover and the control center on click, and shrinks back up into the edge when you leave. The control center: time/date, **Microphone / Night light / Energy saver** toggles, battery, now playing, volume + per-app mixer, brightness per display with refresh rate, **projection modes (like Win+P)**, Wi-Fi/Bluetooth lists. **Next: Phase 7, "Daily-driver hardening"** (start at login, crash restart, sleep/resume, soak test), or the motion polish you pick from "Later ideas".
-- Hands-on checks are left for you in the Phase 1–6 lists. Night light, mic and projection work (your check); **Energy saver** now opens Settings instead of switching (Windows offers apps no way to switch it, E19).
+- **Current phase:** **Phases 0–7 are built.** Island is **installed** (`%LOCALAPPDATA%\Programs\Island`, "Island" in the Start menu). It hides for games, stays tucked away until you push the mouse to the top-middle, and shows clear, iPhone-like glass (left out of screenshots). The control center has time/date, Microphone / Night light / Keep awake, battery, now playing, volume + per-app mixer, brightness, projection modes, Wi-Fi/Bluetooth lists. **Next:** your week of daily use (Phase 7's "done when"), the 48 h soak, and whatever you want changed.
+- **Quit / reopen:** tray icon (^ next to the clock) → Quit Island; reopen from the Start menu (search "Island"). Tray → "Start with Windows" (off until you tick it). After changing code: `pwsh -File tools\install.ps1 -Build` updates the installed copy.
+- Hands-on checks are left for you in the Phase 1–7 lists (games + PresentMon, how the glass and motion feel, sleep/wake).
 - ⚠ Two crashes were found and fixed on 2026-10-24 (§12): an Island crash on an empty media object, and **DWM (the Windows compositor) crashing** when a rebuilt panel released objects with springs still running. None since.
-- **Last updated:** 2026-10-24 14:02 NPT (UTC+05:45)
+- **Last updated:** 2026-10-24 17:22 NPT (UTC+05:45)
 - **Resuming in a new chat:** say "read PLAN.md".
   - This section says where things stand.
   - §11 lists every decision.
@@ -241,7 +242,10 @@ windowsUI/
       DisplayService.*       connected displays, refresh rates, projection mode (Win+P) read and switched
       NightLightService.*    night light on/off (Windows' settings record; registry change notifications)
     platform/
-      Tray.*  Startup.*  Settings.*  Log.*
+      Tray.*                 tray icon and menu (Quit, Start with Windows, settings, log)
+      Startup.*              "Start with Windows" (a Startup-folder shortcut)
+      Settings.*  Log.*
+    Island.rc  resource.h  Island.ico   the app icon
   config/
     settings.json            spring values, game blocklist (read live while Island runs)
   tests/
@@ -249,7 +253,11 @@ windowsUI/
     fullscreen_test.ps1      game-safety test with real windows
     visual_check.ps1         hands-free screenshots + morph timing
     media_test.ps1           silent test media session
-    TestHelpers.cs           backdrop, poses, screenshots for the scripts above
+    soak_test.ps1            appear/tuck cycles; -Watch samples memory and handles for hours
+    TestHelpers.cs           backdrop, poses, screenshots, Touch() for the scripts above
+  tools/
+    install.ps1  uninstall.ps1   install for your user + Start menu entry / remove it
+    make_icon.ps1            draws src\Island.ico
 ```
 
 **Threading rule:** the UI thread owns the window and the compositor, and it never waits on anything slow. Services do their work in the background and post results back through the `DispatcherQueue`.
@@ -386,14 +394,19 @@ You asked for: a wide, horizontal control center (with a margin on both sides) i
   - ✅ (you, 2026-10-24) Night light, mic and the rest work. ❌ Energy saver didn't switch: changed to "show the state, open Settings" (E19).
   - ⬜ (you) Mute/unmute the mic; try a projection mode (your Legion goes dark for "PC screen only"; click Extend on the laptop screen to get it back); unplug the Legion and check the Project list disappears.
 
-### Phase 7: Daily-driver hardening
-- Start at login (Run key) plus an install script.
-- `settings.json` with safe defaults. A corrupt file falls back to defaults instead of crashing.
-- Crash log plus automatic restart.
-- Correct state after sleep/resume, lock/unlock and GPU resets.
-- **48-hour soak test:** the memory graph stays flat and the handle count doesn't grow.
-- Polish: Island's own tray icon (currently Windows' generic app icon) and a dark-mode tray menu.
-- **Done when:** it runs for a week without you thinking about it.
+### Phase 7: Daily-driver hardening ✅ built (2026-10-24; the week-long "done when" is yours)
+- ✅ **Install** (`tools\install.ps1`, no admin): copies Island to `%LOCALAPPDATA%\Programs\Island`, copies `settings.json` there the first time only (your edits are kept on reinstall), adds **"Island" to the Start menu**, starts it. `tools\uninstall.ps1` removes it all. The installed copy reads its own `settings.json` (tray → Open settings.json opens the right one).
+- ✅ **Start with Windows:** a tick-box in the tray menu, **off until you turn it on**. It's a shortcut in your Startup folder (visible and switchable in Task Manager › Startup apps), pointing at the installed copy, so rebuilding never breaks it (F7).
+- ✅ `settings.json` with safe defaults; a broken file keeps the previous settings (since Phase 2).
+- ✅ **Crash diagnosis:** the previous run's log is kept as `island.previous.log`, and a run that didn't end normally is noted at the next start. No automatic restart (decided, §11): reopen it from the Start menu; crashes also show in Windows' event log.
+- ✅ **After sleep and unlock:** fullscreen state, media, brightness, displays and Wi-Fi are looked at again (`WM_POWERBROADCAST`, `WM_WTSSESSION_CHANGE`). **After a GPU reset:** everything is redrawn (since Phase 3) and the clear glass's capture restarts on the new device.
+- ✅ **Island's own icon** (`src\Island.ico`, drawn by `tools\make_icon.ps1`): the exe, the tray, the Start menu.
+- ✅ **Soak test:** `tests\soak_test.ps1` (appear/tuck cycles; `-Watch -Hours 48` samples memory and handles every 10 minutes into `%LOCALAPPDATA%\Island\soak.csv` while you use the PC).
+- ⬜ Dark-mode tray menu: dropped for now (Windows only offers it through undocumented calls).
+- **Done when:**
+  - ✅ Release and Debug build with no warnings; 205 unit checks; `--hardware` 218 (incl. "Start with Windows" switched the other way and back, ending as it was: off).
+  - ✅ Installed copy running from `%LOCALAPPDATA%\Programs\Island`, Start menu entry present, exe carries the icon; **0.0 ms CPU over 60 s idle, 33.7 MB**; no crashes in the event log.
+  - ⬜ (you) Sleep/wake and lock/unlock once, then open the island: everything should be current. Run the 48 h watch (`pwsh -File tests\soak_test.ps1 -Watch -Hours 48`) and look at the CSV. Then: a week without thinking about it.
 
 ### Later ideas (not committed)
 - **Motion polish candidates** (discussed 2026-10-24, waiting for your pick): content that slides with the morph, staggered entrances, a hover highlight that glides between list rows, press feedback from the click point, a slider that grows while dragging, value bubbles on sliders, a lit edge that follows the mouse, toggle colour bloom, rolling numbers for percentages, a soft glow while something plays. See the chat for details.
@@ -607,6 +620,9 @@ Note: some of the GPU memory used to draw our visuals is counted under `dwm.exe`
 | 2026-10-24 | Keep awake replaces the Energy saver button (documented power request; ends when switched off or when Island quits) |
 | 2026-10-24 | The capture is limited to ~60 frames a second and copies only a centred strip (panel width + margin, panel height + overshoot); new frames come only when the screen behind changes |
 | 2026-10-24 | Test screenshots use `--glass-snapshot`: one frame taken before the island first shows, and the island is *not* left out of captures |
+| 2026-10-24 | Installed per user in `%LOCALAPPDATA%\Programs\Island` with a Start menu entry (no admin); "Start with Windows" is a Startup-folder shortcut the user turns on from the tray (off by default) |
+| 2026-10-24 | No automatic restart after a crash: the previous run's log is kept and the crash noted; reopen from the Start menu |
+| 2026-10-24 | No dark-mode tray menu (only possible through undocumented Windows calls) |
 
 ## 12. Update log
 
@@ -614,6 +630,7 @@ Newest first. Times are Nepal time (NPT, UTC+05:45). Each entry says what change
 
 | Date & time | Update |
 |---|---|
+| 2026-10-24 17:22 | **Phase 7 built.** New: `tools/install.ps1`, `tools/uninstall.ps1`, `tools/make_icon.ps1`, `src/Island.rc` + `Island.ico`, `platform/Startup.*`; tray gained "Start with Windows"; the log keeps the previous run; re-checks after sleep/unlock; capture restarts after a GPU reset. **Checked:** see Phase 7; Island is installed and running from `%LOCALAPPDATA%\Programs\Island`, and "Island" is in your Start menu. "Start with Windows" left **off** for you to decide. |
 | 2026-10-24 17:15 | **Phase 6b: clear glass, Keep awake, motion polish** (your request). New: `render/GlassCapture.*` (screen strip capture), `services/KeepAwake.*`, `Spotlight` widget, `tests/soak_test.ps1`; `IslandVisuals` gained the clear layers (view, lens with a ring mask drawn off-screen, sheen); `Effects::CreateClearGlassBrush`; settings `glass.style` / `blur` / `refraction`; `Motion::SpringTo` delays; `View::OnAppear`. **Checked:** see Phase 6b. **Found and fixed while testing:** unit tests crashed once the slider got a text label (labels now skip drawing without a renderer); the capture's yellow-border check first matched the test backdrop's own gold stripes. |
 | 2026-10-24 14:02 | **Energy saver button reworked** (you reported it didn't work). Cause: the documented "start energy saver at battery level" setting, set to 100 %, doesn't switch energy saver on while plugged in (checked: still off), and Windows' own Settings page uses internal calls. Also found: your power plan was left at 100 % ("always" on battery) and Island's saved copy of your levels wasn't removed. **Fixed:** your levels are back (0 % plugged in, 30 % on battery, checked with `powercfg`), Island's registry key is gone, and the button now shows the real state and opens Settings › Energy saver; all power-plan writing code was removed. Builds clean, 205 checks. **Also measured (your question about RAM):** while developing, VS Code ~1.2 GB + its C/C++ extension ~1.2 GB (IntelliSense's database of the Windows SDK and C++/WinRT headers), Claude Code ~0.34 GB, the Claude desktop app ~0.35 GB; all near 0 % CPU when idle. Not development: Jenkins (a Java build server installed as an auto-start service, 110 MB) and the CD Projekt RED launcher's web view (110 MB). Island alone: 35 MB, 0 % CPU. |
 | 2026-10-24 13:50 | **Phase 6 + quick toggles** (your request: night light and energy saver buttons, mic mute, Phase 6, a closing animation, less blur, animation ideas). New: `services/DisplayService.*`, `services/NightLightService.*`, widget `ToggleChip`; `AudioService` gained the microphone, `PowerService` energy saver (and the newer `GUID_ENERGY_SAVER_STATUS`, because the older status says "not available" while plugged in); the Displays column gained names with refresh rates and the Project list; the header gained the three toggles; columns 0.24/0.25/0.19/0.32. **Checked:** builds clean (Release + Debug), 211 unit checks, `--hardware` 222 (read-only for everything new), screenshots, closing timeline, 0.0 ms CPU tucked, 33.5 MB, no crashes. **Not checked by me:** switching night light, energy saver or the projection (each would have changed your screen or power settings): please click them once. **Blur:** not changed. The glass uses Windows' own blur, whose strength apps can't set (details in the chat). |

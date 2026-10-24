@@ -58,6 +58,7 @@ add_library(IslandCore STATIC
     src/views/View.cpp
     src/platform/Log.cpp
     src/platform/Settings.cpp
+    src/platform/Startup.cpp
     src/platform/Tray.cpp
     src/services/AudioService.cpp
     src/services/BluetoothService.cpp
@@ -87,12 +88,14 @@ target_link_libraries(IslandCore PUBLIC
     dxva2           # DDC/CI: external monitor brightness
     wbemuuid        # WMI: laptop panel brightness
     shlwapi         # app names stored in resources (volume mixer)
+    wtsapi32        # "you unlocked the PC" notifications
 )
 
 # WIN32 = a windowed app (entry point wWinMain, no console window).
 add_executable(Island WIN32
     src/main.cpp
     src/app.manifest          # embedded into the exe: DPI awareness, Windows 10/11
+    src/Island.rc             # the app icon
 )
 island_defaults(Island)
 target_link_libraries(Island PRIVATE IslandCore)

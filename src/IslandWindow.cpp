@@ -3,6 +3,7 @@
 #include <dwmapi.h>
 #include <ShellScalingApi.h>
 #include <windowsx.h>
+#include <WtsApi32.h>
 
 #include <algorithm>
 #include <cmath>
@@ -115,7 +116,11 @@ bool IslandWindow::Create(HINSTANCE instance, bool glassSnapshot)
     m_queue = winrt::Windows::System::DispatcherQueue::GetForCurrentThread();
     m_compositor = wuc::Compositor();
     m_graphics.Initialize(m_compositor);
-    m_graphics.OnDeviceReplaced([this] { Rebuild(); });
+    m_graphics.OnDeviceReplaced([this]
+    {
+        m_capture.Stop();  // its frames were on the old device; it starts again on the new one
+        Rebuild();
+    });
     m_visuals.Initialize(m_hwnd, m_compositor, m_graphics);
     m_capture.Initialize(m_hwnd, m_graphics, glassSnapshot);
     m_capture.onFrame = [this]
@@ -151,6 +156,8 @@ bool IslandWindow::Create(HINSTANCE instance, bool glassSnapshot)
     m_demoView = std::make_unique<ControlKitDemo>(m_ui, content);
 
     PlaceOnPrimaryMonitor();
+    // Tell us when you unlock the PC (WM_WTSSESSION_CHANGE).
+    WTSRegisterSessionNotification(m_hwnd, NOTIFY_FOR_THIS_SESSION);
     return true;
 }
 
@@ -879,6 +886,23 @@ LRESULT IslandWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPAR
         m_machine.PointerCaptured(false);
         return 0;
 
+    case WM_POWERBROADCAST:
+        if (wParam == PBT_APMRESUMEAUTOMATIC && m_onResumed)
+        {
+            Log::Info(L"woke from sleep");
+            SchedulePlacement();
+            m_onResumed();
+        }
+        return TRUE;
+
+    case WM_WTSSESSION_CHANGE:
+        if (wParam == WTS_SESSION_UNLOCK && m_onResumed)
+        {
+            Log::Info(L"unlocked");
+            m_onResumed();
+        }
+        return 0;
+
     case WM_DISPLAYCHANGE:  // monitor plugged/unplugged, resolution or primary monitor changed
     case WM_DPICHANGED:     // display scale changed, e.g. 125 % -> 175 %
     case WM_SETTINGCHANGE:  // display settings changed
@@ -917,6 +941,7 @@ LRESULT IslandWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPAR
         break;
 
     case WM_NCDESTROY:
+        WTSUnRegisterSessionNotification(hwnd);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         m_hwnd = nullptr;
         break;

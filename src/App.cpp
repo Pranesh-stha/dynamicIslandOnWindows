@@ -3,6 +3,7 @@
 #include <shellapi.h>
 
 #include "platform/Log.h"
+#include "platform/Startup.h"
 
 namespace
 {
@@ -107,6 +108,14 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
         m_brightness.Refresh();
         m_displays.Refresh();
     });
+    m_island.OnResumed([this]
+    {
+        m_fullscreen.Reevaluate();
+        m_media.Refresh();
+        m_brightness.Refresh();
+        m_displays.Refresh();
+        m_wifi.Scan();
+    });
 
     m_island.OnStateChanged([this](IslandState state)
     {
@@ -157,6 +166,9 @@ std::vector<TrayItem> App::BuildTrayMenu()
     }
     items.push_back({ L"Open log", [] { OpenWithDefaultApp(Log::Path()); } });
     items.push_back(TrayItem::Separator());
+    TrayItem startup{ L"Start with Windows", [] { Startup::SetEnabled(!Startup::Enabled()); } };
+    startup.checked = Startup::Enabled();
+    items.push_back(startup);
     items.push_back({ L"Quit Island", [] { PostQuitMessage(0); } });
     return items;
 }

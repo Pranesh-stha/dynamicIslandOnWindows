@@ -1,0 +1,4 @@
+// Resources built into Island.exe.
+#include "resource.h"
+
+IDI_ISLAND ICON "Island.ico"

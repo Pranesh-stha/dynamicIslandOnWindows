@@ -30,8 +30,33 @@ void Log::Init()
 
     std::lock_guard lock(g_lock);
     g_path = folder + L"\\island.log";
+
+    // The last run's log is kept as island.previous.log, so a crash's last
+    // lines survive the restart. A run that ended normally logged "quitting".
+    const std::wstring previous = folder + L"\\island.previous.log";
+    bool endedNormally = true;
+    if (MoveFileExW(g_path.c_str(), previous.c_str(), MOVEFILE_REPLACE_EXISTING))
+    {
+        if (FILE* old = _wfsopen(previous.c_str(), L"r, ccs=UTF-8", _SH_DENYNO))
+        {
+            wchar_t line[1024];
+            std::wstring last;
+            while (fgetws(line, ARRAYSIZE(line), old))
+            {
+                last = line;
+            }
+            fclose(old);
+            endedNormally = last.empty() || last.find(L"quitting") != std::wstring::npos;
+        }
+    }
+
     // _SH_DENYWR: other programs may read the log while Island runs.
     g_file = _wfsopen(g_path.c_str(), L"w, ccs=UTF-8", _SH_DENYWR);
+    if (!endedNormally && g_file)
+    {
+        fwprintf(g_file, L"(the previous run ended unexpectedly; its log is island.previous.log)\n");
+        fflush(g_file);
+    }
 }
 
 std::wstring Log::Path()

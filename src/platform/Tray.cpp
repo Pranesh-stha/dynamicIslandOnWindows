@@ -9,6 +9,7 @@ namespace
     constexpr wchar_t kClassName[] = L"Island.Tray";
     constexpr UINT kTrayCallbackMessage = WM_APP + 1;
     constexpr UINT kIconId = 1;
+    constexpr int kIslandIconId = 101;  // IDI_ISLAND in src/resource.h
 }
 
 Tray::~Tray()
@@ -48,7 +49,14 @@ bool Tray::Create(HINSTANCE instance, std::function<std::vector<TrayItem>()> bui
     m_icon.uID = kIconId;
     m_icon.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_SHOWTIP;
     m_icon.uCallbackMessage = kTrayCallbackMessage;
-    m_icon.hIcon = LoadIconW(nullptr, IDI_APPLICATION);  // placeholder until Island has its own icon
+    // Island's own icon, at the small size the taskbar uses (it's built into
+    // Island.exe; anything else that uses this code gets Windows' generic one).
+    m_icon.hIcon = static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(kIslandIconId), IMAGE_ICON,
+        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_DEFAULTCOLOR));
+    if (!m_icon.hIcon)
+    {
+        m_icon.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    }
     wcscpy_s(m_icon.szTip, L"Island");
     m_icon.uVersion = NOTIFYICON_VERSION_4;
     AddIcon();

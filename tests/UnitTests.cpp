@@ -31,6 +31,7 @@
 
 #include "StateMachine.h"
 #include "platform/Settings.h"
+#include "platform/Startup.h"
 #include "render/Widgets.h"
 #include "render/Glyphs.h"
 #include "services/AudioService.h"
@@ -946,6 +947,12 @@ namespace
                 std::printf("    %ls: %dx%d at %d Hz\n", display.name.c_str(), display.width, display.height, display.refreshHz);
             }
             CHECK(!displays.active.empty() && displays.projection != Projection::Unknown);
+
+            // "Start with Windows": switched the other way and back, so it ends as it was.
+            const bool startup = Startup::Enabled();
+            CHECK(Startup::SetEnabled(!startup) && Startup::Enabled() == !startup);
+            CHECK(Startup::SetEnabled(startup) && Startup::Enabled() == startup);
+            std::printf("  start with Windows: %s (would start %ls)\n", startup ? "on" : "off", Startup::Target().c_str());
 
             std::printf("  bluetooth: %zu paired devices\n", bluetooth.paired.size());
             for (const BluetoothDevice& device : bluetooth.paired)

@@ -74,6 +74,10 @@ public:
     // Called after displays are plugged in, unplugged or rearranged.
     void OnDisplaysChanged(std::function<void()> handler) { m_onDisplaysChanged = std::move(handler); }
 
+    // Called after the PC wakes from sleep and after you unlock it: things
+    // may have changed meanwhile without telling us (PLAN.md F6).
+    void OnResumed(std::function<void()> handler) { m_onResumed = std::move(handler); }
+
     // What the services report. While hidden this is only stored: nothing is
     // redrawn until the island comes back.
     void SetMedia(const MediaState& media);
@@ -167,6 +171,7 @@ private:
     DisplaysState m_displays;
     std::function<void(IslandState)> m_onStateChanged;
     std::function<void()> m_onDisplaysChanged;
+    std::function<void()> m_onResumed;
 
     winrt::Windows::UI::ViewManagement::UISettings m_uiSettings{ nullptr };
     winrt::event_token m_effectsChangedToken{};
