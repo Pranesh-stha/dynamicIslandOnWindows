@@ -122,18 +122,19 @@ public static class Visual
     // Width of the dark glass on row y: walks left from the screen center
     // (over the white half of the backdrop) to the first light pixel. One
     // thin strip of the screen is captured per sample.
-    static Bitmap s_strip = new Bitmap(700, 1);
+    // Half the screen: the control center can be almost as wide as the screen.
+    static readonly int s_half = GetSystemMetrics(0) / 2;
+    static Bitmap s_strip = new Bitmap(s_half, 1);
     static Graphics s_stripGraphics = Graphics.FromImage(s_strip);
     public static int PillWidth(int y)
     {
-        int cx = GetSystemMetrics(0) / 2;
-        s_stripGraphics.CopyFromScreen(cx - 700, y, 0, 0, new Size(700, 1));
-        for (int i = 699; i >= 0; i--)
+        s_stripGraphics.CopyFromScreen(0, y, 0, 0, new Size(s_half, 1));
+        for (int i = s_half - 1; i >= 0; i--)
         {
             Color c = s_strip.GetPixel(i, 0);
-            if (c.R + c.G + c.B > 3 * 215) return 2 * (699 - i);
+            if (c.R + c.G + c.B > 3 * 215) return 2 * (s_half - 1 - i);
         }
-        return 1400;
+        return 2 * s_half;
     }
 
     // Samples the pill's width on row y for `ms` milliseconds; prints each change.
