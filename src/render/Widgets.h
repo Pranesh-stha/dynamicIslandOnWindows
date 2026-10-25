@@ -206,6 +206,8 @@ public:
     void PointerLeave();
     void CancelPress();
     bool RightClick(float x, float y);
+    // The control under the mouse gets the wheel; if it doesn't scroll, the
+    // ones behind it may (a list row passes it on to its list).
     bool Wheel(float x, float y, float notches);
     bool Pressing() const { return m_pressed != nullptr; }
 
@@ -417,6 +419,18 @@ private:
     Spotlight* m_spotlight = nullptr;
     bool m_active = false;
     bool m_busy = false;
+};
+
+// An invisible area that turns the mouse wheel into scrolling (a list). It
+// takes no clicks: the controls on top of it do, and they pass the wheel on
+// to it (ControlHost::Wheel).
+class WheelArea : public Control
+{
+public:
+    explicit WheelArea(const Ui& ui) : Control(ui) { SetInteractive(false); }
+
+    std::function<bool(float notches)> onWheel;  // true if it took the wheel
+    bool OnWheel(float notches) override { return onWheel && onWheel(notches); }
 };
 
 // A row of choices with a selection pill that slides to the chosen one

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <format>
 
 #include "render/Glyphs.h"
 
@@ -30,20 +29,9 @@ namespace
     }
 }
 
-ListPage PageLines(int count, int rows, int page)
+int ScrollFirst(int count, int rows, int first)
 {
-    if (count <= rows)
-    {
-        return { 0, 0, count, false };
-    }
-    const int perPage = rows - 1;
-    const int pages = (count + perPage - 1) / perPage;
-    ListPage result;
-    result.page = (page % pages + pages) % pages;
-    result.first = result.page * perPage;
-    result.count = std::min(perPage, count - result.first);
-    result.more = true;
-    return result;
+    return std::clamp(first, 0, std::max(0, count - rows));
 }
 
 float ConnectionsSection::Build(const wuc::ContainerVisual& layer, ControlHost& controls, float x, float y, float width)
@@ -72,31 +60,48 @@ float ConnectionsSection::Build(const wuc::ContainerVisual& layer, ControlHost& 
     Add(layer, controls, *m_bluetoothTile);
     y += tileHeight + ui.Px(10.0f);
 
-    // The list: a few rows made once and filled as things change, and a
-    // footer, with one hover highlight that glides between them.
-    m_spotlight = std::make_unique<Spotlight>(ui);
-    layer.Children().InsertAtTop(m_spotlight->Visual());
-    const float rowHeight = ui.Px(36.0f);
+    // The list: one row per line, in a window four rows tall that the mouse
+    // wheel scrolls a row at a time. When it scrolls, the rows move to their
+    // new places at once (so a click lands on the row you see once it
+    // settles) while their picture slides there with a spring. One hover
+    // highlight glides between the rows. The footer stays put underneath.
+    m_controls = &controls;
+    m_rowHeight = ui.Px(36.0f);
     const float rowGap = ui.Px(2.0f);
-    for (int i = 0; i < kRows; ++i)
-    {
-        m_rows[i] = std::make_unique<ListRow>(ui);
-        m_rows[i]->SetSpotlight(m_spotlight.get());
-        m_rows[i]->SetBounds(x, y, width, rowHeight);
-        m_rows[i]->onClick = [this, i] { OnRowClicked(i); };
-        m_rows[i]->onRightClick = [this]
-        {
-            if (m_actions.openSettings)
-            {
-                m_actions.openSettings(m_list == List::Wifi ? L"ms-settings:network-wifi" : L"ms-settings:bluetooth");
-            }
-        };
-        Add(layer, controls, *m_rows[i]);
-        y += rowHeight + rowGap;
-    }
-    m_footer = std::make_unique<ListRow>(ui);
-    m_footer->SetSpotlight(m_spotlight.get());
-    m_footer->SetBounds(x, y, width, rowHeight);
+    m_rowStep = m_rowHeight + rowGap;
+    m_listX = x;
+    m_listTop = y;
+    m_listWidth = width;
+    m_listHeight = m_rowStep * kRows - rowGap;
+    m_viewport = ui.compositor.CreateContainerVisual();
+    m_viewport.Size({ x + width, y + m_listHeight });
+    m_viewport.Clip(ui.compositor.CreateInsetClip(x, y, 0.0f, 0.0f));  // only the list's own window shows
+    layer.Children().InsertAtTop(m_viewport);
+    m_content = ui.compositor.CreateContainerVisual();
+    m_viewport.Children().InsertAtTop(m_content);
+    m_spotlight = std::make_unique<Spotlight>(ui);
+    m_content.Children().InsertAtTop(m_spotlight->Visual());
+    m_rows.clear();
+    m_rowIds.clear();
+    m_rowClickable.clear();
+    m_lineCount = 0;
+
+    // A thin bar at the right edge: where you are in a long list.
+    const float thumbWidth = ui.Px(3.0f);
+    m_thumb = RoundedRect(ui, thumbWidth, m_listHeight, thumbWidth / 2.0f, White(0.3f));
+    m_thumb.visual.Opacity(0.0f);
+    m_thumb.visual.Offset({ x + width - thumbWidth, y, 0.0f });
+    m_viewport.Children().InsertAtTop(m_thumb.visual);
+
+    m_wheelArea = std::make_unique<WheelArea>(ui);
+    m_wheelArea->SetBounds(x, y, width, m_listHeight);
+    m_wheelArea->onWheel = [this](float notches) { return OnWheel(notches); };
+    controls.Add(*m_wheelArea);
+    ResetScroll();
+    y += m_listHeight + rowGap;
+
+    m_footer = std::make_unique<ListRow>(ui);  // its own highlight: the list's is clipped to the list
+    m_footer->SetBounds(x, y, width, m_rowHeight);
     m_footer->onClick = [this]
     {
         switch (m_list)
@@ -113,7 +118,7 @@ float ConnectionsSection::Build(const wuc::ContainerVisual& layer, ControlHost& 
         }
     };
     Add(layer, controls, *m_footer);
-    y += rowHeight;
+    y += m_rowHeight;
 
     m_built = true;
     ApplyTiles(false);
@@ -133,7 +138,7 @@ void ConnectionsSection::Show(List list)
         m_actions.stopBluetoothSearch();
     }
     m_list = list;
-    m_page = 0;
+    ResetScroll();
     StartRefreshing();
     ApplyTiles(true);
     ApplyList(true);
@@ -163,9 +168,9 @@ void ConnectionsSection::OnVisibilityChanged(bool visible)
         }
         m_list = List::Bluetooth;  // next time, start from the paired devices
     }
-    m_page = 0;
     if (m_built)
     {
+        ResetScroll();  // next time, from the top
         // This also stops every "working" pulse: nothing animates while hidden.
         ApplyTiles(false);
         ApplyList(false);
@@ -331,44 +336,166 @@ void ConnectionsSection::ApplyList(bool animate)
         footer = { L"", Glyph::Back, L"Back to my devices" };
     }
 
-    // Too many to show at once: the last row pages through them.
-    const ListPage page = PageLines(static_cast<int>(lines.size()), kRows, m_page);
-    m_page = page.page;
-    std::vector<Line> shown(lines.begin() + page.first, lines.begin() + page.first + page.count);
-    if (page.more)
+    // Longer than the four rows: the list scrolls (rows below the window are
+    // still filled in, so they're ready when they slide into view).
+    if (lines.size() > static_cast<size_t>(kMaxLines))
     {
-        const std::wstring range = std::format(L"{}–{} of {}", page.first + 1, page.first + page.count, lines.size());
-        shown.push_back({ L"", Glyph::More, m_list == List::Wifi ? L"More networks" : L"More devices", range, Glyph::ChevronRight });
+        lines.resize(kMaxLines);
     }
-    m_moreRow = page.more ? static_cast<int>(shown.size()) - 1 : -1;
-
-    for (int i = 0; i < kRows; ++i)
+    m_lineCount = static_cast<int>(lines.size());
+    for (int i = 0; i < m_lineCount; ++i)
     {
-        ListRow& row = *m_rows[i];
-        if (i >= static_cast<int>(shown.size()))
-        {
-            m_rowIds[i].clear();
-            row.SetShown(false, animate);
-            continue;
-        }
-        const Line& line = shown[i];
+        const Line& line = lines[i];
+        ListRow& row = Row(i);
         m_rowIds[i] = line.id;
+        m_rowClickable[i] = line.clickable;
         row.SetContent(line.glyph, line.title, line.detail, line.trailing, line.active, animate);
         row.SetBusy(line.busy && m_visible);  // the pulse only runs on screen
         row.SetShown(true, animate);
-        row.SetInteractive(line.clickable);
     }
+    for (int i = m_lineCount; i < static_cast<int>(m_rows.size()); ++i)
+    {
+        m_rowIds[i].clear();
+        m_rows[i]->SetShown(false, animate);
+    }
+    ScrollTo(m_scroll, animate);  // the list may have got shorter
+    PlaceRows(animate);
     m_footer->SetContent(footer.glyph, footer.title, footer.detail, footer.trailing, false, animate);
+}
+
+ListRow& ConnectionsSection::Row(int index)
+{
+    while (static_cast<int>(m_rows.size()) <= index)
+    {
+        const int i = static_cast<int>(m_rows.size());
+        auto row = std::make_unique<ListRow>(m_ui);
+        row->SetSpotlight(m_spotlight.get());
+        row->onClick = [this, i] { OnRowClicked(i); };
+        row->onRightClick = [this]
+        {
+            if (m_actions.openSettings)
+            {
+                m_actions.openSettings(m_list == List::Wifi ? L"ms-settings:network-wifi" : L"ms-settings:bluetooth");
+            }
+        };
+        row->SetShown(false, false);
+        m_content.Children().InsertAtTop(row->Visual());
+        m_controls->Add(*row);
+        m_rows.push_back(std::move(row));
+        m_rowIds.emplace_back();
+        m_rowClickable.push_back(false);
+    }
+    return *m_rows[index];
+}
+
+bool ConnectionsSection::OnWheel(float notches)
+{
+    if (m_lineCount <= kRows)
+    {
+        m_wheel = 0.0f;
+        return false;  // nothing to scroll
+    }
+    // A row per notch; a touchpad's small steps add up to notches.
+    m_wheel += notches;
+    const int rows = static_cast<int>(m_wheel);  // whole notches, towards zero
+    m_wheel -= static_cast<float>(rows);
+    if (rows != 0)
+    {
+        ScrollTo(m_scroll - rows, true);  // wheel up: towards the top of the list
+    }
+    return true;
+}
+
+void ConnectionsSection::ScrollTo(int first, bool animate)
+{
+    first = ScrollFirst(m_lineCount, kRows, first);
+    const int moved = first - m_scroll;  // rows moved up by this many
+    if (moved == 0)
+    {
+        return;
+    }
+    m_scroll = first;
+    PlaceRows(animate);
+    if (!animate || !m_visible)
+    {
+        StopSlide();
+        return;
+    }
+    // The rows have jumped to their new places. Their picture starts where it
+    // was (shifted back by the same distance) and springs to rest, keeping
+    // its speed if it was still sliding from the last notch.
+    const Motion::SpringPoint now = Slide();
+    m_slideFrom = now.value + static_cast<float>(moved) * m_rowStep;
+    m_slideVelocity = now.velocity;
+    m_slideStart = GetTickCount64();
+    m_content.StopAnimation(L"Offset");
+    m_content.Offset({ 0.0f, m_slideFrom, 0.0f });
+    Motion::SpringTo(m_content, L"Offset", Motion::float3{ 0.0f, 0.0f, 0.0f }, Motion::float3{ 0.0f, m_slideVelocity, 0.0f },
+                     m_ui.motion->slider);
+}
+
+void ConnectionsSection::ResetScroll()
+{
+    m_scroll = 0;
+    m_wheel = 0.0f;
+    StopSlide();
+}
+
+void ConnectionsSection::StopSlide()
+{
+    m_slideFrom = 0.0f;
+    m_slideVelocity = 0.0f;
+    if (m_content)
+    {
+        m_content.StopAnimation(L"Offset");
+        m_content.Offset({ 0.0f, 0.0f, 0.0f });
+    }
+}
+
+Motion::SpringPoint ConnectionsSection::Slide() const
+{
+    if (m_slideFrom == 0.0f && m_slideVelocity == 0.0f)
+    {
+        return { 0.0f, 0.0f };
+    }
+    const float seconds = static_cast<float>(GetTickCount64() - m_slideStart) / 1000.0f;
+    return Motion::SpringAt(m_ui.motion->slider, m_slideFrom, m_slideVelocity, 0.0f, seconds);
+}
+
+void ConnectionsSection::PlaceRows(bool animate)
+{
+    for (int i = 0; i < static_cast<int>(m_rows.size()); ++i)
+    {
+        ListRow& row = *m_rows[i];
+        row.SetBounds(m_listX, m_listTop + static_cast<float>(i - m_scroll) * m_rowStep, m_listWidth, m_rowHeight);
+        // Rows scrolled out of the window are clipped away and mustn't take the mouse.
+        const bool inWindow = i >= m_scroll && i < m_scroll + kRows;
+        row.SetInteractive(i < m_lineCount && inWindow && m_rowClickable[i]);
+    }
+
+    // The scroll bar: as tall as the share of the list on screen.
+    const bool scrolls = m_lineCount > kRows;
+    const float thumbWidth = m_thumb.visual.Size().x;
+    const float thumbHeight = scrolls ? std::max(m_ui.Px(16.0f), std::round(m_listHeight * kRows / m_lineCount)) : m_listHeight;
+    const float thumbY = m_listTop + (scrolls ? std::round((m_listHeight - thumbHeight) * m_scroll / (m_lineCount - kRows)) : 0.0f);
+    m_thumb.Resize(thumbWidth, thumbHeight, thumbWidth / 2.0f);
+    const Motion::float3 thumbAt{ m_listX + m_listWidth - thumbWidth, thumbY, 0.0f };
+    if (animate && m_visible)
+    {
+        Motion::SpringTo(m_thumb.visual, L"Offset", thumbAt, m_ui.motion->slider);
+        Motion::EaseTo(m_thumb.visual, L"Opacity", scrolls ? 1.0f : 0.0f, 160);
+    }
+    else
+    {
+        m_thumb.visual.StopAnimation(L"Offset");
+        m_thumb.visual.StopAnimation(L"Opacity");
+        m_thumb.visual.Offset(thumbAt);
+        m_thumb.visual.Opacity(scrolls ? 1.0f : 0.0f);
+    }
 }
 
 void ConnectionsSection::OnRowClicked(int row)
 {
-    if (row == m_moreRow)
-    {
-        ++m_page;  // PageLines wraps from the last page to the first
-        ApplyList(true);
-        return;
-    }
     const std::wstring& id = m_rowIds[row];
     if (id.empty())
     {

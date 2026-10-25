@@ -466,8 +466,16 @@ bool ControlHost::RightClick(float x, float y)
 
 bool ControlHost::Wheel(float x, float y, float notches)
 {
-    Control* hit = Hit(x, y);
-    return hit && hit->OnWheel(notches);
+    // Not Hit(): something that takes no clicks (a WheelArea) may still scroll.
+    for (auto it = m_controls.rbegin(); it != m_controls.rend(); ++it)
+    {
+        if ((*it)->Enabled() && (*it)->Contains(x, y) && (*it)->OnWheel(notches))
+        {
+            PointerMove(x, y);  // a list may have moved another row under the mouse
+            return true;
+        }
+    }
+    return false;
 }
 
 // --- IconButton --------------------------------------------------------------

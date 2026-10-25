@@ -446,12 +446,28 @@ namespace
             CHECK(!host.PointerDown(100, 100));
             CHECK(!host.Pressing());
 
-            // Right-click and wheel go to the control under the pointer.
+            // Right-click and wheel go to the control under the pointer (and
+            // after a wheel, hover follows what's now under it: H).
             button.events.clear();
             CHECK(host.RightClick(20, 20));
             CHECK(host.Wheel(20, 20, 1.0f));
             CHECK(!host.Wheel(100, 100, 1.0f));
-            CHECK(button.events == L"RW");
+            CHECK(button.events == L"RWH");
+
+            // A control that doesn't scroll passes the wheel on to what's
+            // behind it (a list row to its list); the list's wheel area
+            // itself never takes a click.
+            ControlHost list;
+            WheelArea area(ui);
+            area.SetBounds(0, 0, 100, 100);
+            float scrolled = 0.0f;
+            area.onWheel = [&](float notches) { scrolled += notches; return true; };
+            Control row(ui);
+            row.SetBounds(0, 0, 100, 40);
+            list.Add(area);
+            list.Add(row);
+            CHECK(list.Wheel(50, 20, -1.0f) && scrolled == -1.0f);
+            CHECK(!list.PointerDown(50, 70));
 
             // Leaving the island clears the hover (no highlight left stuck on).
             host.PointerMove(20, 20);
@@ -622,15 +638,11 @@ namespace
         SortDevices(devices);
         CHECK(devices[0].name == L"Buds" && devices[1].name == L"Speaker" && devices[2].name == L"Alpha" && devices[3].name == L"zeta");
 
-        // Long lists page: 3 lines + a "more" row per page of 4, wrapping around.
-        auto page = PageLines(3, 4, 0);
-        CHECK(!page.more && page.first == 0 && page.count == 3);
-        page = PageLines(7, 4, 0);
-        CHECK(page.more && page.first == 0 && page.count == 3);
-        page = PageLines(7, 4, 2);
-        CHECK(page.more && page.first == 6 && page.count == 1);
-        page = PageLines(7, 4, 3);  // past the last page: back to the first
-        CHECK(page.page == 0 && page.first == 0);
+        // Long lists scroll, and never past their ends (the last rows stay full).
+        CHECK(ScrollFirst(3, 4, 2) == 0);   // fits in the rows: doesn't scroll
+        CHECK(ScrollFirst(7, 4, 1) == 1);
+        CHECK(ScrollFirst(7, 4, 9) == 3);   // past the end: the last four lines
+        CHECK(ScrollFirst(7, 4, -2) == 0);  // past the top
 
         // Battery text and icon.
         PowerState power;
