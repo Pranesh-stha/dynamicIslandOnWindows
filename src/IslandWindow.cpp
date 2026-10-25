@@ -35,6 +35,11 @@ namespace
     constexpr UINT_PTR kTuckTimer = 5;
     constexpr UINT kTuckShrinkMs = 310;
 
+    // KeepOnTop looks once more this long after the front window changed:
+    // an app may rearrange its windows after it has come to the front.
+    constexpr UINT_PTR kTopmostTimer = 6;
+    constexpr UINT kTopmostRecheckMs = 400;
+
     // Clear glass behind the small pill: new pictures a second (see GlassCapture::SetMaxFps).
     constexpr int kPillGlassFps = 2;
 
@@ -581,10 +586,48 @@ void IslandWindow::EnterState(IslandState from, IslandState to)
 
 void IslandWindow::ShowNow()
 {
-    // Re-assert "always on top" only here, on our own state change, never in
-    // a loop, so we don't fight other always-on-top windows.
+    // Re-assert "always on top" only here, on our own state change, and in
+    // KeepOnTop when something covers us; never in a loop, so we don't fight
+    // other always-on-top windows.
     SetWindowPos(m_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
     Log::Info(L"island shown");
+}
+
+void IslandWindow::KeepOnTop()
+{
+    RaiseIfCovered();
+    ::SetTimer(m_hwnd, kTopmostTimer, kTopmostRecheckMs, nullptr);
+}
+
+void IslandWindow::RaiseIfCovered()
+{
+    if (State() == IslandState::Hidden || !IsWindowVisible(m_hwnd) || !Covered())
+    {
+        return;
+    }
+    SetWindowPos(m_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    Log::Info(L"island raised again (a window had been put above it)");
+}
+
+bool IslandWindow::Covered() const
+{
+    RECT island{};
+    GetWindowRect(m_hwnd, &island);
+    for (HWND above = GetWindow(m_hwnd, GW_HWNDPREV); above; above = GetWindow(above, GW_HWNDPREV))
+    {
+        if (!IsWindowVisible(above))
+        {
+            continue;
+        }
+        BOOL cloaked = FALSE;  // e.g. Store apps' frames on other virtual desktops: "visible" but not shown
+        DwmGetWindowAttribute(above, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
+        RECT rect{}, overlap{};
+        if (!cloaked && GetWindowRect(above, &rect) && IntersectRect(&overlap, &island, &rect))
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 // --- Showing a state ---------------------------------------------------------
@@ -1096,6 +1139,10 @@ LRESULT IslandWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPAR
                 const auto strip = StripSize();
                 ResizeWindow(strip.x, strip.y);
             }
+            return 0;
+        case kTopmostTimer:
+            KillTimer(hwnd, kTopmostTimer);
+            RaiseIfCovered();
             return 0;
         }
         break;

@@ -66,6 +66,13 @@ public:
     // The user is dragging or resizing some window.
     void SetWindowDragActive(bool active);
 
+    // Chromium-based apps (Brave, VS Code), maximized with an auto-hide
+    // taskbar, put themselves above always-on-top windows when they come to
+    // the front; the mouse at the top edge then can't reach the island. Call
+    // after the front window may have changed: it raises the island again if
+    // something covers it, now and once more a moment later.
+    void KeepOnTop();
+
     // What the views' buttons do. Set once, before anything is clicked.
     IslandActions& Actions() { return m_actions; }
 
@@ -144,6 +151,8 @@ private:
     void UpdateGlass();  // clear glass on/off and the screen strip it copies
     Motion::float2 StripSize() const;  // the window while tucked away
     void ShowNow();
+    void RaiseIfCovered();  // see KeepOnTop
+    bool Covered() const;   // a visible window above the island overlaps it
     void PushMedia();
     void PushQuickControls();
     void RebuildControlCenter();

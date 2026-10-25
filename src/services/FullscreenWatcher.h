@@ -38,7 +38,10 @@ public:
     ~FullscreenWatcher();
 
     // onMoveSize(true/false): the user started/stopped dragging or resizing a window.
-    bool Start(HINSTANCE instance, std::function<void(State)> onChange, std::function<void(bool)> onMoveSize);
+    // onChecked: after every look at the windows (the front window may have
+    // changed), whether or not the state changed.
+    bool Start(HINSTANCE instance, std::function<void(State)> onChange, std::function<void(bool)> onMoveSize,
+               std::function<void()> onChecked);
     void SetBlocklist(std::vector<std::wstring> lowerCaseExeNames);
     void Reevaluate();
     State Current() const { return m_state; }
@@ -73,6 +76,7 @@ private:
     State m_state;
     std::function<void(State)> m_onChange;
     std::function<void(bool)> m_onMoveSize;
+    std::function<void()> m_onChecked;
     std::vector<std::wstring> m_blocklist;
     HWND m_blockCheckedWindow{};  // the last window checked against the blocklist, and the answer
     bool m_blockCheckedResult = false;

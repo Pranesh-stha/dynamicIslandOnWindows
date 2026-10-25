@@ -151,11 +151,13 @@ FullscreenWatcher::~FullscreenWatcher()
     s_instance = nullptr;
 }
 
-bool FullscreenWatcher::Start(HINSTANCE instance, std::function<void(State)> onChange, std::function<void(bool)> onMoveSize)
+bool FullscreenWatcher::Start(HINSTANCE instance, std::function<void(State)> onChange, std::function<void(bool)> onMoveSize,
+                              std::function<void()> onChecked)
 {
     s_instance = this;
     m_onChange = std::move(onChange);
     m_onMoveSize = std::move(onMoveSize);
+    m_onChecked = std::move(onChecked);
 
     WNDCLASSEXW windowClass{};
     windowClass.cbSize = sizeof(windowClass);
@@ -370,6 +372,10 @@ void FullscreenWatcher::Evaluate()
         {
             m_onChange(state);
         }
+    }
+    if (m_onChecked)
+    {
+        m_onChecked();
     }
 }
 

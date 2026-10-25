@@ -120,6 +120,18 @@ public static class TestWin
 
     public static void Maximize(IntPtr window) { ShowWindow(window, 3); }
 
+    // Puts a window above the island (always-on-top), or back among normal windows.
+    public static void PutAbove(IntPtr window) { SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0, 0x1 | 0x2 | 0x10); }
+    public static void PutBack(IntPtr window) { SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0, 0x1 | 0x2 | 0x10); }
+
+    // Would the mouse at the top edge reach the island, or something on top of it?
+    public static bool IslandReachable()
+    {
+        IntPtr island = FindWindow("Island.Pill", null);
+        RECT r; GetWindowRect(island, out r);
+        return WindowFromPoint(new POINT { X = (r.Left + r.Right) / 2, Y = r.Top }) == island;
+    }
+
     // What Chrome does on F11: drop the caption and resize border, cover the monitor.
     public static void GoFullscreen(IntPtr window, RECT monitor)
     {
@@ -200,6 +212,19 @@ try {
     $visible = [TestWin]::WaitForIsland($true, 100) -ge 0
     $height = [TestWin]::IslandHeight()
     Check "stays for a maximized window, as the slim line" ($visible -and $height -le 12) "island window is $height px tall"
+
+    # 3b. Chromium-based apps (Brave, VS Code), maximized with an auto-hide
+    #     taskbar, put themselves above always-on-top windows when they come
+    #     to the front, and then the mouse at the top edge can't reach the
+    #     island. Same end state here: a window put above it, then a window switch.
+    [TestWin]::PutAbove($normal)
+    $other = [TestWin]::Create($small, $false)
+    [TestWin]::ClickToFront($other)
+    [TestWin]::Pump(800)  # the island looks right away and once more 0.4 s later
+    Check "back on top after a window was put above it" ([TestWin]::IslandReachable()) "the mouse at the top edge reaches the island"
+    [void][TestWin]::DestroyWindow($other)
+    [TestWin]::PutBack($normal)
+    [TestWin]::ClickToFront($normal)  # in front again for the F11 step
 
     # 4. The same window goes fullscreen like Chrome on F11 (no focus change).
     [TestWin]::GoFullscreen($normal, $primary)

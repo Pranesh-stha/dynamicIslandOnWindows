@@ -51,7 +51,8 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
             m_island.SetSlim(state.slim);
             m_island.SetFullscreenHidden(state.hide);
         },
-        [this](bool active) { m_island.SetWindowDragActive(active); });
+        [this](bool active) { m_island.SetWindowDragActive(active); },
+        [this] { m_island.KeepOnTop(); });
     if (!watching)
     {
         Log::Info(L"fullscreen watcher failed to start");
