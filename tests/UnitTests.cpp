@@ -674,10 +674,14 @@ namespace
         onBattery.pluggedIn = true;
         CHECK(BatteryToneOf(onBattery) == BatteryTone::Charging);
 
-        // ...and its sky badge for the part of the day.
-        CHECK(TimeOfDayAt(6) == TimeOfDay::Dawn && TimeOfDayAt(12) == TimeOfDay::Day);
-        CHECK(TimeOfDayAt(18) == TimeOfDay::Dusk && TimeOfDayAt(23) == TimeOfDay::Night && TimeOfDayAt(3) == TimeOfDay::Night);
-        CHECK(TimeOfDayAt(8) == TimeOfDay::Day && TimeOfDayAt(17) == TimeOfDay::Dusk && TimeOfDayAt(20) == TimeOfDay::Night);
+        // ...and where its sun (6:00-18:00) or moon is on the arc.
+        auto at = [](int hour, int minute) { return SunPathAt(hour * 60 + minute); };
+        CHECK(at(6, 0).day && at(6, 0).progress == 0.0f);   // sunrise: the left horizon
+        CHECK(at(12, 0).day && at(12, 0).progress == 0.5f);  // noon: the top
+        CHECK(at(17, 59).day && at(17, 59).progress > 0.99f);
+        CHECK(!at(18, 0).day && at(18, 0).progress == 0.0f);  // the moon rises
+        CHECK(!at(0, 0).day && at(0, 0).progress == 0.5f);   // midnight: the top
+        CHECK(!at(5, 59).day && at(5, 59).progress > 0.99f);
     }
 
     void TestQuickToggles()

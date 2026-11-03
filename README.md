@@ -31,7 +31,7 @@ and opens into a full control center 🎛️. And the moment a game goes fullscr
 | Feature | What you get |
 |---|---|
 | 🎵 **Now playing** | Album art, title and artist, play / pause / skip, a progress line. Works with Spotify, browsers, Media Player and any app that shows up in Windows' own media controls. Several apps playing? Pick one. |
-| 🌤️ **Glance** | Nothing playing? Hover and Peek shows the time in rolling digits beside a little sky that changes through the day (dawn, sun, dusk, moon), the date, and your battery filling up. |
+| 🌤️ **Glance** | Nothing playing? Hover and Peek shows the time in rolling digits beside the sun's path (a tiny arc where the sun, or the moon at night, rises to where it is now), the date, and your battery filling up, with a bolt in it on the charger. |
 | 🎚️ **Sound** | Your output volume plus a **per-app mixer** (turn Discord down without touching Spotify). |
 | ☀️ **Brightness** | For the laptop screen *and* external monitors (most monitors support it over DDC/CI; no extra software needed). |
 | 📶 **Wi‑Fi & Bluetooth** | Turn them on and off, see the networks around you and join one, connect or disconnect your headphones and speakers. |

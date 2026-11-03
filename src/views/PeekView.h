@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "services/MediaState.h"
 #include "services/PowerService.h"
@@ -9,9 +10,9 @@
 #include "views/View.h"
 
 // The wider strip shown while the mouse rests on the island: the song with
-// play/pause and next; when nothing is playing, a glance at the time of day,
-// the date and the battery; while a timer or stopwatch is on, the time in big
-// digits with pause and stop instead.
+// play/pause and next; when nothing is playing, a glance: the sun's path
+// through the day, the time, the date and the battery; while a timer or
+// stopwatch is on, the time in big digits with pause and stop instead.
 class PeekView : public View
 {
 public:
@@ -30,9 +31,10 @@ protected:
 private:
     void Apply(bool animate);
     bool ShowsGlance() const;
-    void UpdateClock(bool animate);  // the time, the date, the sky badge
+    void UpdateClock(bool animate);  // the time, the date, the sun (or moon) on its path
     void ScheduleTick();             // just after the next whole minute, while shown
     void ApplyBattery(bool animate);
+    Motion::float3 SunAt(float progress) const;  // the sun's top-left at `progress` along the arc (0 = left horizon)
 
     const IslandActions& m_actions;
     MediaState m_media;
@@ -51,19 +53,30 @@ private:
     std::unique_ptr<IconButton> m_playPause, m_next;
 
     // The glance (nothing playing).
-    winrt::Windows::UI::Composition::ContainerVisual m_sky{ nullptr };  // the time-of-day badge: circle + sun or moon
-    std::unique_ptr<RoundedRect> m_skyCircle;
-    std::unique_ptr<Label> m_skyIcon, m_date, m_batteryDetail, m_bolt;
+    winrt::Windows::UI::Composition::ContainerVisual m_sky{ nullptr };  // the sun's path: arc, horizon, sun or moon, stars
+    winrt::Windows::UI::Composition::ShapeVisual m_arc{ nullptr };
+    winrt::Windows::UI::Composition::ContainerVisual m_sun{ nullptr };  // the sun (or moon) and its glow; moves along the arc
+    std::unique_ptr<RoundedRect> m_horizon, m_sunGlow, m_sunCore;
+    std::vector<std::unique_ptr<RoundedRect>> m_stars;
+    std::unique_ptr<Label> m_date, m_batteryDetail, m_bolt;
     std::unique_ptr<RollingText> m_clock, m_batteryPercent;
     std::unique_ptr<RoundedRect> m_batteryBody, m_batteryFill, m_batteryTip;
     winrt::Windows::UI::Composition::ContainerVisual m_battery{ nullptr };
-    int m_skyShown = -1;  // the TimeOfDay the badge shows
+    float m_arcRadius = 0.0f;
+    Motion::float2 m_arcCenter{};
+    float m_sunProgress = 0.0f;
+    int m_skyDay = -1;  // 1 = the sun's colours, 0 = the moon's, -1 = not set yet
     winrt::Windows::System::DispatcherQueueTimer m_tick{ nullptr };
 };
 
-// The part of the day the glance's badge shows. Pure logic, unit-tested.
-enum class TimeOfDay { Dawn, Day, Dusk, Night };
-TimeOfDay TimeOfDayAt(int hour);  // hour 0-23
+// Where the glance's sun (6:00-18:00) or moon (18:00-6:00) is on its arc:
+// `progress` 0 at the left horizon, 1 at the right. Pure logic, unit-tested.
+struct SunPath
+{
+    bool day = true;
+    float progress = 0.0f;
+};
+SunPath SunPathAt(int minuteOfDay);  // 0-1439
 
 // The colour of the battery's fill. Pure logic, unit-tested.
 enum class BatteryTone { Normal, Charging, Low, Critical };

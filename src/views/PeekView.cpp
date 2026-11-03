@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <format>
+#include <numbers>
 
 #include "platform/Settings.h"
 #include "render/Glyphs.h"
@@ -20,24 +22,11 @@ namespace
         bottom.SetPosition(x, textTop + top.Height());
     }
 
-    // The glance's badge for each part of the day: a sky gradient (top left
-    // to bottom right) with the sun, or the moon at night.
-    struct Sky
-    {
-        Color from, to;
-        wchar_t glyph;
-    };
-
-    Sky SkyFor(TimeOfDay time)
-    {
-        switch (time)
-        {
-        case TimeOfDay::Dawn: return { { 255, 255, 183, 120 }, { 255, 236, 104, 150 }, Glyph::Brightness };  // peach to pink
-        case TimeOfDay::Day: return { { 255, 255, 196, 52 }, { 255, 245, 118, 22 }, Glyph::Brightness };     // gold to orange
-        case TimeOfDay::Dusk: return { { 255, 255, 118, 92 }, { 255, 150, 76, 196 }, Glyph::Brightness };    // coral to purple
-        default: return { { 255, 88, 96, 222 }, { 255, 36, 28, 104 }, Glyph::Sleep };                        // indigo night, the moon
-        }
-    }
+    // The glance's sun is warm and glows; the moon is cool and glows less.
+    constexpr Color kSun{ 255, 255, 204, 82 };
+    constexpr Color kSunGlow{ 70, 255, 204, 82 };
+    constexpr Color kMoon{ 255, 226, 232, 255 };
+    constexpr Color kMoonGlow{ 40, 226, 232, 255 };
 
     Color BatteryColor(BatteryTone tone)
     {
@@ -51,21 +40,16 @@ namespace
     }
 }
 
-TimeOfDay TimeOfDayAt(int hour)
+SunPath SunPathAt(int minuteOfDay)
 {
-    if (hour >= 5 && hour < 8)
+    // Twelve hours each, every one crossing the arc from left to right.
+    constexpr int kSunrise = 6 * 60, kSunset = 18 * 60, kDay = 24 * 60;
+    const int minute = (minuteOfDay % kDay + kDay) % kDay;
+    if (minute >= kSunrise && minute < kSunset)
     {
-        return TimeOfDay::Dawn;
+        return { true, static_cast<float>(minute - kSunrise) / (kSunset - kSunrise) };
     }
-    if (hour >= 8 && hour < 17)
-    {
-        return TimeOfDay::Day;
-    }
-    if (hour >= 17 && hour < 20)
-    {
-        return TimeOfDay::Dusk;
-    }
-    return TimeOfDay::Night;
+    return { false, static_cast<float>((minute - kSunset + kDay) % kDay) / (kDay - (kSunset - kSunrise)) };
 }
 
 BatteryTone BatteryToneOf(const PowerState& power)
@@ -94,24 +78,64 @@ void PeekView::Build()
         return visual;
     };
 
-    // Nothing playing: a glance. A badge for the part of the day (the sun on
-    // a dawn, day or dusk sky, the moon at night), the time in big rolling
-    // digits with the date under it, and a battery that fills up as Peek
-    // opens, with the percentage and how long it lasts.
+    // Nothing playing: a glance. On the left the sun's path: a thin arc over
+    // a horizon, with the sun (warm, softly glowing) on it by day, or the moon
+    // (cool, among three small stars) by night, as far along as the day or
+    // night has got; it rises along the arc as Peek opens. Then the time in
+    // big rolling digits with the date under it, and a battery that fills up
+    // as Peek opens, with a bolt in it on the charger.
     m_glance = container();
-    const float pad = ui.Px(10.0f);
-    const float badge = ui.EvenPx(36.0f);
-    const float badgeY = std::round((m_height - badge) / 2.0f);
+    const float pad = ui.Px(12.0f);
+    const float skyWidth = ui.EvenPx(42.0f), skyHeight = ui.Px(30.0f);
+    m_arcRadius = ui.Px(16.0f);
+    m_arcCenter = { skyWidth / 2.0f, ui.Px(22.0f) };
     m_sky = ui.compositor.CreateContainerVisual();
-    m_sky.Size({ badge, badge });
-    m_sky.Offset({ pad, badgeY, 0.0f });
-    m_sky.CenterPoint({ badge / 2.0f, badge / 2.0f, 0.0f });  // pops in from its middle
-    m_skyCircle = std::make_unique<RoundedRect>(ui, badge, badge, badge / 2.0f, White(0.14f));
-    m_sky.Children().InsertAtTop(m_skyCircle->visual);
-    m_skyIcon = std::make_unique<Label>(ui, 17.0f, DWRITE_FONT_WEIGHT_NORMAL, true);
-    m_sky.Children().InsertAtTop(m_skyIcon->Visual());
+    m_sky.Size({ skyWidth, skyHeight });
+    m_sky.Offset({ pad, std::round((m_height - skyHeight) / 2.0f), 0.0f });
     m_glance.Children().InsertAtTop(m_sky);
-    m_skyShown = -1;
+
+    // The arc: a circle's outline, cut off at the horizon.
+    auto circle = ui.compositor.CreateEllipseGeometry();
+    circle.Center(m_arcCenter);
+    circle.Radius({ m_arcRadius, m_arcRadius });
+    auto outline = ui.compositor.CreateSpriteShape(circle);
+    outline.StrokeBrush(ui.compositor.CreateColorBrush(White(0.28f)));
+    outline.StrokeThickness(std::max(1.0f, ui.Px(1.5f)));
+    m_arc = ui.compositor.CreateShapeVisual();
+    m_arc.Size({ skyWidth, skyHeight });
+    m_arc.Shapes().Append(outline);
+    m_arc.Clip(ui.compositor.CreateInsetClip(0.0f, 0.0f, 0.0f, skyHeight - m_arcCenter.y));
+    m_sky.Children().InsertAtTop(m_arc);
+    const float line = std::max(1.0f, ui.Px(1.0f));
+    m_horizon = std::make_unique<RoundedRect>(ui, skyWidth, line, line / 2.0f, White(0.28f));
+    m_horizon->visual.Offset({ 0.0f, std::round(m_arcCenter.y - line / 2.0f), 0.0f });
+    m_sky.Children().InsertAtTop(m_horizon->visual);
+
+    // Stars for the night sky, inside the arc (fractions of its radius).
+    m_stars.clear();
+    const float stars[][3] = { { -0.5f, -0.42f, 2.0f }, { 0.1f, -0.62f, 1.5f }, { 0.48f, -0.24f, 1.5f } };
+    for (const auto& star : stars)
+    {
+        const float size = std::max(1.0f, ui.Px(star[2]));
+        auto dot = std::make_unique<RoundedRect>(ui, size, size, size / 2.0f, White(0.75f));
+        dot->visual.Offset({ std::round(m_arcCenter.x + star[0] * m_arcRadius), std::round(m_arcCenter.y + star[1] * m_arcRadius), 0.0f });
+        dot->visual.Opacity(0.0f);
+        m_sky.Children().InsertAtTop(dot->visual);
+        m_stars.push_back(std::move(dot));
+    }
+
+    // The sun (or moon): a small disc in a soft glow.
+    const float core = ui.EvenPx(8.0f), glow = ui.EvenPx(16.0f);
+    m_sun = ui.compositor.CreateContainerVisual();
+    m_sun.Size({ glow, glow });
+    m_sunGlow = std::make_unique<RoundedRect>(ui, glow, glow, glow / 2.0f, kSunGlow);
+    m_sunCore = std::make_unique<RoundedRect>(ui, core, core, core / 2.0f, kSun);
+    m_sunCore->visual.Offset({ (glow - core) / 2.0f, (glow - core) / 2.0f, 0.0f });
+    m_sun.Children().InsertAtTop(m_sunGlow->visual);
+    m_sun.Children().InsertAtTop(m_sunCore->visual);
+    m_sky.Children().InsertAtTop(m_sun);
+    m_skyDay = -1;
+
     m_clock = std::make_unique<RollingText>(ui, 19.0f);
     m_glance.Children().InsertAtTop(m_clock->Visual());
     m_date = std::make_unique<Label>(ui, 11.0f);
@@ -119,8 +143,8 @@ void PeekView::Build()
     m_glance.Children().InsertAtTop(m_date->Visual());
 
     // The battery, drawn: an outline, a fill that grows from the left, the
-    // tip, and a bolt while charging.
-    const float bodyWidth = ui.EvenPx(26.0f), bodyHeight = ui.EvenPx(13.0f);
+    // tip, and a bolt on the charger.
+    const float bodyWidth = ui.EvenPx(28.0f), bodyHeight = ui.EvenPx(14.0f);
     const float edge = std::max(1.0f, ui.Px(2.0f));
     m_battery = ui.compositor.CreateContainerVisual();
     m_battery.Size({ bodyWidth + std::max(1.0f, ui.Px(1.0f)) + ui.Px(2.0f), bodyHeight });
@@ -130,7 +154,7 @@ void PeekView::Build()
     m_batteryFill->visual.CenterPoint({ 0.0f, 0.0f, 0.0f });  // fills from the left
     m_batteryTip = std::make_unique<RoundedRect>(ui, ui.Px(2.0f), std::round(bodyHeight * 0.45f), ui.Px(1.0f), White(0.22f));
     m_batteryTip->visual.Offset({ bodyWidth + std::max(1.0f, ui.Px(1.0f)), std::round(bodyHeight * 0.275f), 0.0f });
-    m_bolt = std::make_unique<Label>(ui, 9.0f, DWRITE_FONT_WEIGHT_NORMAL, true);
+    m_bolt = std::make_unique<Label>(ui, 10.0f, DWRITE_FONT_WEIGHT_NORMAL, true);
     m_bolt->SetText(std::wstring(1, Glyph::Bolt));
     m_bolt->SetPosition(std::round((bodyWidth - m_bolt->Width()) / 2.0f), std::round((bodyHeight - m_bolt->Height()) / 2.0f));
     for (const wuc::Visual& visual : { wuc::Visual(m_batteryBody->visual), wuc::Visual(m_batteryFill->visual),
@@ -184,12 +208,15 @@ void PeekView::Build()
     // Timer: the icon in an accent circle, the time big, what it is under
     // it, and pause/resume and stop on the right.
     m_timerLayer = container();
+    const float timerPad = ui.Px(10.0f);
+    const float badge = ui.EvenPx(36.0f);
+    const float badgeY = std::round((m_height - badge) / 2.0f);
     m_timerBadge = std::make_unique<RoundedRect>(ui, badge, badge, badge / 2.0f, ui.accent);
-    m_timerBadge->visual.Offset({ pad, badgeY, 0.0f });
+    m_timerBadge->visual.Offset({ timerPad, badgeY, 0.0f });
     m_timerLayer.Children().InsertAtTop(m_timerBadge->visual);
     m_timerIcon = std::make_unique<Label>(ui, 16.0f, DWRITE_FONT_WEIGHT_NORMAL, true);
     m_timerIcon->SetText(std::wstring(1, Glyph::Stopwatch));
-    m_timerIcon->SetPosition(pad + std::round((badge - m_timerIcon->Width()) / 2.0f), badgeY + std::round((badge - m_timerIcon->Height()) / 2.0f));
+    m_timerIcon->SetPosition(timerPad + std::round((badge - m_timerIcon->Width()) / 2.0f), badgeY + std::round((badge - m_timerIcon->Height()) / 2.0f));
     m_timerLayer.Children().InsertAtTop(m_timerIcon->Visual());
     m_timerTime = std::make_unique<RollingText>(ui, 19.0f);
     m_timerLayer.Children().InsertAtTop(m_timerTime->Visual());
@@ -262,8 +289,8 @@ void PeekView::OnVisibilityChanged(bool visible)
         m_tick.Stop();
     }
     // Nothing animates while hidden: finish the entrance at once.
-    m_sky.StopAnimation(L"Scale");
-    m_sky.Scale({ 1.0f, 1.0f, 1.0f });
+    m_sun.StopAnimation(L"Offset");
+    m_sun.Offset(SunAt(m_sunProgress));
     ApplyBattery(false);
 }
 
@@ -273,11 +300,22 @@ void PeekView::OnAppear()
     {
         return;
     }
-    // A little entrance: the badge pops in, the battery fills up to its charge.
+    // A little entrance: the sun (or moon) rises from the left horizon along
+    // the arc to where it is now, and the battery fills up to its charge.
     const MotionSettings& motion = *m_ui.motion;
-    m_sky.StopAnimation(L"Scale");
-    m_sky.Scale({ 0.55f, 0.55f, 1.0f });
-    Motion::SpringTo(m_sky, L"Scale", Motion::float3{ 1.0f, 1.0f, 1.0f }, motion.toggle, motion.contentFadeInDelayMs);
+    auto rise = m_ui.compositor.CreateVector3KeyFrameAnimation();
+    const auto linear = m_ui.compositor.CreateLinearEasingFunction();
+    constexpr int kSteps = 24;  // points along the curve; the motion eases out
+    for (int i = 0; i <= kSteps; ++i)
+    {
+        const float t = static_cast<float>(i) / kSteps;
+        const float eased = 1.0f - (1.0f - t) * (1.0f - t) * (1.0f - t);
+        rise.InsertKeyFrame(t, SunAt(m_sunProgress * eased), linear);
+    }
+    rise.Duration(std::chrono::milliseconds(900));
+    rise.DelayTime(std::chrono::milliseconds(motion.contentFadeInDelayMs));
+    rise.DelayBehavior(wuc::AnimationDelayBehavior::SetInitialValueBeforeDelay);  // on the horizon while it waits
+    m_sun.StartAnimation(L"Offset", rise);
     if (m_power.hasBattery)
     {
         const float level = std::clamp(m_power.percent / 100.0f, 0.04f, 1.0f);
@@ -303,22 +341,29 @@ void PeekView::UpdateClock(bool animate)
     m_clock->SetPosition(x, top);
     m_date->SetPosition(x, top + m_clock->Height());
 
-    const TimeOfDay part = TimeOfDayAt(now.wHour);
-    if (static_cast<int>(part) == m_skyShown)
+    // The sun (or the moon) moves along its arc, a little every minute.
+    const SunPath path = SunPathAt(now.wHour * 60 + now.wMinute);
+    m_sunProgress = path.progress;
+    m_sun.StopAnimation(L"Offset");
+    m_sun.Offset(SunAt(m_sunProgress));
+    if (static_cast<int>(path.day) == m_skyDay)
     {
         return;
     }
-    m_skyShown = static_cast<int>(part);
-    const Sky sky = SkyFor(part);
-    auto gradient = m_ui.compositor.CreateLinearGradientBrush();
-    gradient.StartPoint({ 0.0f, 0.0f });
-    gradient.EndPoint({ 1.0f, 1.0f });
-    gradient.ColorStops().Append(m_ui.compositor.CreateColorGradientStop(0.0f, sky.from));
-    gradient.ColorStops().Append(m_ui.compositor.CreateColorGradientStop(1.0f, sky.to));
-    m_skyCircle->shape.FillBrush(gradient);
-    m_skyIcon->SetText(std::wstring(1, sky.glyph));
-    const float badge = m_sky.Size().x;
-    m_skyIcon->SetPosition(std::round((badge - m_skyIcon->Width()) / 2.0f), std::round((badge - m_skyIcon->Height()) / 2.0f));
+    m_skyDay = path.day ? 1 : 0;
+    m_sunCore->shape.FillBrush(m_ui.compositor.CreateColorBrush(path.day ? kSun : kMoon));
+    m_sunGlow->shape.FillBrush(m_ui.compositor.CreateColorBrush(path.day ? kSunGlow : kMoonGlow));
+    for (const auto& star : m_stars)
+    {
+        star->visual.Opacity(path.day ? 0.0f : 1.0f);
+    }
+}
+
+Motion::float3 PeekView::SunAt(float progress) const
+{
+    const float angle = std::numbers::pi_v<float> * (1.0f - progress);  // left horizon (pi) over the top to the right (0)
+    const float half = m_sun.Size().x / 2.0f;
+    return { m_arcCenter.x + m_arcRadius * std::cos(angle) - half, m_arcCenter.y - m_arcRadius * std::sin(angle) - half, 0.0f };
 }
 
 void PeekView::ScheduleTick()
@@ -348,17 +393,19 @@ void PeekView::ScheduleTick()
 void PeekView::ApplyBattery(bool animate)
 {
     // A desktop PC without a battery: just the time and date.
+    // How long it lasts, only on battery: on the charger the bolt says it.
+    const bool detail = m_power.hasBattery && !m_power.pluggedIn && m_power.minutesLeft > 0;
     const float shown = m_power.hasBattery ? 1.0f : 0.0f;
     m_battery.Opacity(shown);
     m_batteryPercent->Visual().Opacity(shown);
-    m_batteryDetail->Visual().Opacity(0.6f * shown);
+    m_batteryDetail->Visual().Opacity(detail ? 0.6f : 0.0f);
     if (!m_power.hasBattery)
     {
         return;
     }
 
     m_batteryFill->shape.FillBrush(m_ui.compositor.CreateColorBrush(BatteryColor(BatteryToneOf(m_power))));
-    m_bolt->Visual().Opacity(m_power.charging ? 1.0f : 0.0f);
+    m_bolt->Visual().Opacity(m_power.pluggedIn ? 1.0f : 0.0f);
     const float level = std::clamp(m_power.percent / 100.0f, 0.04f, 1.0f);
     if (animate)
     {
@@ -370,12 +417,13 @@ void PeekView::ApplyBattery(bool animate)
         m_batteryFill->visual.Scale({ level, 1.0f, 1.0f });
     }
     m_batteryPercent->SetText(std::format(L"{} %", m_power.percent), animate);
-    m_batteryDetail->SetText(PowerDescription(m_power));
+    m_batteryDetail->SetText(detail ? PowerDescription(m_power) : L"");
 
-    // Right-aligned: [84 %] [battery] on the time's line, how long it lasts under it.
+    // Right-aligned: [84 %] [battery], on the time's line with how long it
+    // lasts under it, or alone in the middle on the charger.
     const float right = m_width - m_ui.Px(14.0f);
     const float top = std::round((m_height - m_clock->Height() - m_date->Height()) / 2.0f);
-    const float middle = top + m_clock->Height() / 2.0f;
+    const float middle = detail ? top + m_clock->Height() / 2.0f : m_height / 2.0f;
     const float batteryX = right - m_battery.Size().x;
     m_battery.Offset({ batteryX, std::round(middle - m_battery.Size().y / 2.0f), 0.0f });
     m_batteryPercent->SetPosition(batteryX - m_ui.Px(6.0f) - m_batteryPercent->Width(), std::round(middle - m_batteryPercent->Height() / 2.0f));
