@@ -42,6 +42,7 @@
 #include "services/PowerService.h"
 #include "services/TimerService.h"
 #include "services/WifiService.h"
+#include "views/PeekView.h"
 #include "views/sections/ConnectionsSection.h"
 #include "views/sections/DisplaysSection.h"
 #include "views/sections/SoundSection.h"
@@ -660,6 +661,23 @@ namespace
         CHECK(PowerDescription(power) == L"Fully charged");
         PowerState desktop;
         CHECK(PowerDescription(desktop) == L"Plugged in" && BatteryGlyph(desktop) == Glyph::Plug);
+
+        // Peek's glance: the battery's colour (on power green; low orange; very low red).
+        PowerState onBattery;
+        onBattery.hasBattery = true;
+        onBattery.percent = 55;
+        CHECK(BatteryToneOf(onBattery) == BatteryTone::Normal);
+        onBattery.percent = 20;
+        CHECK(BatteryToneOf(onBattery) == BatteryTone::Low);
+        onBattery.percent = 9;
+        CHECK(BatteryToneOf(onBattery) == BatteryTone::Critical);
+        onBattery.pluggedIn = true;
+        CHECK(BatteryToneOf(onBattery) == BatteryTone::Charging);
+
+        // ...and its sky badge for the part of the day.
+        CHECK(TimeOfDayAt(6) == TimeOfDay::Dawn && TimeOfDayAt(12) == TimeOfDay::Day);
+        CHECK(TimeOfDayAt(18) == TimeOfDay::Dusk && TimeOfDayAt(23) == TimeOfDay::Night && TimeOfDayAt(3) == TimeOfDay::Night);
+        CHECK(TimeOfDayAt(8) == TimeOfDay::Day && TimeOfDayAt(17) == TimeOfDay::Dusk && TimeOfDayAt(20) == TimeOfDay::Night);
     }
 
     void TestQuickToggles()

@@ -70,7 +70,8 @@ Start-Sleep -Seconds 5
 
 # 3. Test helpers: the backdrop (so screenshots never include your own
 #    windows), poses and screenshots.
-$drawing = [AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.Location -and $_.GetName().Name -match '^System\.(Drawing|Private\.Windows)' } | ForEach-Object Location
+$null = [System.Drawing.Bitmap], [System.Drawing.Graphics]  # PowerShell 7.6+ loads the assemblies that hold them only when first used
+$drawing = @([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.Location -and $_.GetName().Name -match '^System\.(Drawing|Private\.Windows)' } | ForEach-Object Location)
 Add-Type -Path (Join-Path $PSScriptRoot "TestHelpers.cs") -ReferencedAssemblies ($drawing + @("System.Threading", "System.Threading.Thread"))
 function Shot([string]$name, [int]$w, [int]$h) { [Visual]::Shot((Join-Path $Out $name), $w, $h) }
 function MediaLines { Get-Content $log | Select-String "media: " | ForEach-Object Line }

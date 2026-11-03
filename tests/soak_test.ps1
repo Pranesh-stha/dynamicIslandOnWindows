@@ -35,7 +35,8 @@ if ($Watch) {
 }
 
 Add-Type -AssemblyName System.Drawing
-$drawing = [AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.Location -and $_.GetName().Name -match '^System\.(Drawing|Private\.Windows)' } | ForEach-Object Location
+$null = [System.Drawing.Bitmap], [System.Drawing.Graphics]  # PowerShell 7.6+ loads the assemblies that hold them only when first used
+$drawing = @([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.Location -and $_.GetName().Name -match '^System\.(Drawing|Private\.Windows)' } | ForEach-Object Location)
 Add-Type -Path (Join-Path $PSScriptRoot "TestHelpers.cs") -ReferencedAssemblies ($drawing + @("System.Threading", "System.Threading.Thread"))
 
 $started = Get-Date

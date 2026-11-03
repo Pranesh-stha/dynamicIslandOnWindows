@@ -452,6 +452,7 @@ void IslandWindow::SetPower(const PowerState& power)
     if (State() != IslandState::Hidden)
     {
         m_controlCenter->SetPower(power);
+        m_peekView->SetPower(power);
     }
 }
 
@@ -466,6 +467,7 @@ void IslandWindow::PushQuickControls()
     m_controlCenter->SetWifi(m_wifi);
     m_controlCenter->SetBluetooth(m_bluetooth);
     m_controlCenter->SetPower(m_power);
+    m_peekView->SetPower(m_power);
 }
 
 void IslandWindow::OpenControlKitDemo()

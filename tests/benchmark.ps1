@@ -15,7 +15,8 @@ $root = Split-Path $PSScriptRoot -Parent
 if (-not (Test-Path $Exe)) { throw "Not found: $Exe (install with tools\install.ps1, or pass -Exe)" }
 $log = Join-Path $env:LOCALAPPDATA "Island\island.log"
 Add-Type -AssemblyName System.Drawing
-$drawing = [AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.Location -and $_.GetName().Name -match '^System\.(Drawing|Private\.Windows)' } | ForEach-Object Location
+$null = [System.Drawing.Bitmap], [System.Drawing.Graphics]  # PowerShell 7.6+ loads the assemblies that hold them only when first used
+$drawing = @([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.Location -and $_.GetName().Name -match '^System\.(Drawing|Private\.Windows)' } | ForEach-Object Location)
 Add-Type -Path (Join-Path $PSScriptRoot "TestHelpers.cs") -ReferencedAssemblies ($drawing + @("System.Threading", "System.Threading.Thread"))
 $screen = [Visual]::GetSystemMetrics(0)
 $rows = [System.Collections.Generic.List[object]]::new()

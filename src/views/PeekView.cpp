@@ -1,7 +1,14 @@
 #include "views/PeekView.h"
 
+#include <algorithm>
+#include <chrono>
+#include <format>
+
 #include "platform/Settings.h"
 #include "render/Glyphs.h"
+
+namespace wuc = winrt::Windows::UI::Composition;
+using winrt::Windows::UI::Color;
 
 namespace
 {
@@ -12,6 +19,66 @@ namespace
         top.SetPosition(x, textTop);
         bottom.SetPosition(x, textTop + top.Height());
     }
+
+    // The glance's badge for each part of the day: a sky gradient (top left
+    // to bottom right) with the sun, or the moon at night.
+    struct Sky
+    {
+        Color from, to;
+        wchar_t glyph;
+    };
+
+    Sky SkyFor(TimeOfDay time)
+    {
+        switch (time)
+        {
+        case TimeOfDay::Dawn: return { { 255, 255, 183, 120 }, { 255, 236, 104, 150 }, Glyph::Brightness };  // peach to pink
+        case TimeOfDay::Day: return { { 255, 255, 196, 52 }, { 255, 245, 118, 22 }, Glyph::Brightness };     // gold to orange
+        case TimeOfDay::Dusk: return { { 255, 255, 118, 92 }, { 255, 150, 76, 196 }, Glyph::Brightness };    // coral to purple
+        default: return { { 255, 88, 96, 222 }, { 255, 36, 28, 104 }, Glyph::Sleep };                        // indigo night, the moon
+        }
+    }
+
+    Color BatteryColor(BatteryTone tone)
+    {
+        switch (tone)
+        {
+        case BatteryTone::Charging: return { 255, 52, 199, 89 };  // green, as in the charging moment
+        case BatteryTone::Low: return { 255, 255, 159, 10 };
+        case BatteryTone::Critical: return { 255, 255, 69, 58 };
+        default: return White(0.92f);
+        }
+    }
+}
+
+TimeOfDay TimeOfDayAt(int hour)
+{
+    if (hour >= 5 && hour < 8)
+    {
+        return TimeOfDay::Dawn;
+    }
+    if (hour >= 8 && hour < 17)
+    {
+        return TimeOfDay::Day;
+    }
+    if (hour >= 17 && hour < 20)
+    {
+        return TimeOfDay::Dusk;
+    }
+    return TimeOfDay::Night;
+}
+
+BatteryTone BatteryToneOf(const PowerState& power)
+{
+    if (power.charging || power.pluggedIn)
+    {
+        return BatteryTone::Charging;
+    }
+    if (power.percent <= 10)
+    {
+        return BatteryTone::Critical;
+    }
+    return power.percent <= 20 ? BatteryTone::Low : BatteryTone::Normal;
 }
 
 void PeekView::Build()
@@ -27,29 +94,59 @@ void PeekView::Build()
         return visual;
     };
 
-    // Nothing playing: a hint.
-    m_empty = container();
+    // Nothing playing: a glance. A badge for the part of the day (the sun on
+    // a dawn, day or dusk sky, the moon at night), the time in big rolling
+    // digits with the date under it, and a battery that fills up as Peek
+    // opens, with the percentage and how long it lasts.
+    m_glance = container();
     const float pad = ui.Px(10.0f);
     const float badge = ui.EvenPx(36.0f);
     const float badgeY = std::round((m_height - badge) / 2.0f);
-    m_badge = std::make_unique<RoundedRect>(ui, badge, badge, badge / 2.0f, White(0.14f));
-    m_badge->visual.Offset({ pad, badgeY, 0.0f });
-    m_empty.Children().InsertAtTop(m_badge->visual);
-    m_badgeIcon = std::make_unique<Label>(ui, 16.0f, DWRITE_FONT_WEIGHT_NORMAL, true);
-    m_badgeIcon->SetText(std::wstring(1, Glyph::MusicNote));
-    m_badgeIcon->SetPosition(pad + std::round((badge - m_badgeIcon->Width()) / 2.0f), badgeY + std::round((badge - m_badgeIcon->Height()) / 2.0f));
-    m_empty.Children().InsertAtTop(m_badgeIcon->Visual());
-    const float emptyTextX = pad + badge + ui.Px(10.0f);
-    m_emptyTitle = std::make_unique<Label>(ui, 13.5f, DWRITE_FONT_WEIGHT_SEMI_BOLD);
-    m_emptyTitle->SetMaxWidth(m_width - emptyTextX - ui.Px(20.0f));
-    m_emptyTitle->SetText(L"Nothing playing");
-    m_emptySubtitle = std::make_unique<Label>(ui, 11.5f);
-    m_emptySubtitle->SetMaxWidth(m_width - emptyTextX - ui.Px(20.0f));
-    m_emptySubtitle->SetText(L"Click for the control center");
-    m_emptySubtitle->Visual().Opacity(0.6f);
-    PlaceLines(*m_emptyTitle, *m_emptySubtitle, emptyTextX, m_height);
-    m_empty.Children().InsertAtTop(m_emptyTitle->Visual());
-    m_empty.Children().InsertAtTop(m_emptySubtitle->Visual());
+    m_sky = ui.compositor.CreateContainerVisual();
+    m_sky.Size({ badge, badge });
+    m_sky.Offset({ pad, badgeY, 0.0f });
+    m_sky.CenterPoint({ badge / 2.0f, badge / 2.0f, 0.0f });  // pops in from its middle
+    m_skyCircle = std::make_unique<RoundedRect>(ui, badge, badge, badge / 2.0f, White(0.14f));
+    m_sky.Children().InsertAtTop(m_skyCircle->visual);
+    m_skyIcon = std::make_unique<Label>(ui, 17.0f, DWRITE_FONT_WEIGHT_NORMAL, true);
+    m_sky.Children().InsertAtTop(m_skyIcon->Visual());
+    m_glance.Children().InsertAtTop(m_sky);
+    m_skyShown = -1;
+    m_clock = std::make_unique<RollingText>(ui, 19.0f);
+    m_glance.Children().InsertAtTop(m_clock->Visual());
+    m_date = std::make_unique<Label>(ui, 11.0f);
+    m_date->Visual().Opacity(0.6f);
+    m_glance.Children().InsertAtTop(m_date->Visual());
+
+    // The battery, drawn: an outline, a fill that grows from the left, the
+    // tip, and a bolt while charging.
+    const float bodyWidth = ui.EvenPx(26.0f), bodyHeight = ui.EvenPx(13.0f);
+    const float edge = std::max(1.0f, ui.Px(2.0f));
+    m_battery = ui.compositor.CreateContainerVisual();
+    m_battery.Size({ bodyWidth + std::max(1.0f, ui.Px(1.0f)) + ui.Px(2.0f), bodyHeight });
+    m_batteryBody = std::make_unique<RoundedRect>(ui, bodyWidth, bodyHeight, ui.Px(4.0f), White(0.22f));
+    m_batteryFill = std::make_unique<RoundedRect>(ui, bodyWidth - 2.0f * edge, bodyHeight - 2.0f * edge, ui.Px(2.5f), White(0.92f));
+    m_batteryFill->visual.Offset({ edge, edge, 0.0f });
+    m_batteryFill->visual.CenterPoint({ 0.0f, 0.0f, 0.0f });  // fills from the left
+    m_batteryTip = std::make_unique<RoundedRect>(ui, ui.Px(2.0f), std::round(bodyHeight * 0.45f), ui.Px(1.0f), White(0.22f));
+    m_batteryTip->visual.Offset({ bodyWidth + std::max(1.0f, ui.Px(1.0f)), std::round(bodyHeight * 0.275f), 0.0f });
+    m_bolt = std::make_unique<Label>(ui, 9.0f, DWRITE_FONT_WEIGHT_NORMAL, true);
+    m_bolt->SetText(std::wstring(1, Glyph::Bolt));
+    m_bolt->SetPosition(std::round((bodyWidth - m_bolt->Width()) / 2.0f), std::round((bodyHeight - m_bolt->Height()) / 2.0f));
+    for (const wuc::Visual& visual : { wuc::Visual(m_batteryBody->visual), wuc::Visual(m_batteryFill->visual),
+                                       wuc::Visual(m_batteryTip->visual), wuc::Visual(m_bolt->Visual()) })
+    {
+        m_battery.Children().InsertAtTop(visual);
+    }
+    m_glance.Children().InsertAtTop(m_battery);
+    m_batteryPercent = std::make_unique<RollingText>(ui, 14.0f);
+    m_glance.Children().InsertAtTop(m_batteryPercent->Visual());
+    m_batteryDetail = std::make_unique<Label>(ui, 11.0f);
+    m_batteryDetail->SetMaxWidth(ui.Px(150.0f));
+    m_batteryDetail->Visual().Opacity(0.6f);
+    m_glance.Children().InsertAtTop(m_batteryDetail->Visual());
+    UpdateClock(false);
+    ApplyBattery(false);
 
     // Playing: artwork, song, play/pause and next.
     m_playing = container();
@@ -133,6 +230,158 @@ void PeekView::SetMedia(const MediaState& media)
     }
 }
 
+void PeekView::SetPower(const PowerState& power)
+{
+    m_power = power;
+    if (m_glance)
+    {
+        ApplyBattery(Visible() && ShowsGlance());  // only what's on screen animates
+    }
+}
+
+bool PeekView::ShowsGlance() const
+{
+    return m_timer.mode == TimerMode::None && !m_media.hasSession;
+}
+
+void PeekView::OnVisibilityChanged(bool visible)
+{
+    if (!m_glance)
+    {
+        return;
+    }
+    if (visible)
+    {
+        UpdateClock(false);  // as it is now, without rolling
+        ApplyBattery(false);
+        ScheduleTick();
+        return;
+    }
+    if (m_tick)
+    {
+        m_tick.Stop();
+    }
+    // Nothing animates while hidden: finish the entrance at once.
+    m_sky.StopAnimation(L"Scale");
+    m_sky.Scale({ 1.0f, 1.0f, 1.0f });
+    ApplyBattery(false);
+}
+
+void PeekView::OnAppear()
+{
+    if (!m_glance || !ShowsGlance())
+    {
+        return;
+    }
+    // A little entrance: the badge pops in, the battery fills up to its charge.
+    const MotionSettings& motion = *m_ui.motion;
+    m_sky.StopAnimation(L"Scale");
+    m_sky.Scale({ 0.55f, 0.55f, 1.0f });
+    Motion::SpringTo(m_sky, L"Scale", Motion::float3{ 1.0f, 1.0f, 1.0f }, motion.toggle, motion.contentFadeInDelayMs);
+    if (m_power.hasBattery)
+    {
+        const float level = std::clamp(m_power.percent / 100.0f, 0.04f, 1.0f);
+        m_batteryFill->visual.StopAnimation(L"Scale");
+        m_batteryFill->visual.Scale({ 0.0f, 1.0f, 1.0f });
+        Motion::EaseTo(m_batteryFill->visual, L"Scale", Motion::float3{ level, 1.0f, 1.0f }, 650, motion.contentFadeInDelayMs + 60);
+    }
+}
+
+void PeekView::UpdateClock(bool animate)
+{
+    // In your own formats (Settings > Time & language): "8:42 PM" or "20:42"; "Tue, 3 Nov".
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    wchar_t time[64]{};
+    wchar_t date[64]{};
+    GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, TIME_NOSECONDS, &now, nullptr, time, ARRAYSIZE(time));
+    GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, 0, &now, L"ddd, d MMM", date, ARRAYSIZE(date), nullptr);
+    m_clock->SetText(time, animate);  // the minute rolls over like a counter
+    m_date->SetText(date);
+    const float x = m_sky.Offset().x + m_sky.Size().x + m_ui.Px(10.0f);
+    const float top = std::round((m_height - m_clock->Height() - m_date->Height()) / 2.0f);
+    m_clock->SetPosition(x, top);
+    m_date->SetPosition(x, top + m_clock->Height());
+
+    const TimeOfDay part = TimeOfDayAt(now.wHour);
+    if (static_cast<int>(part) == m_skyShown)
+    {
+        return;
+    }
+    m_skyShown = static_cast<int>(part);
+    const Sky sky = SkyFor(part);
+    auto gradient = m_ui.compositor.CreateLinearGradientBrush();
+    gradient.StartPoint({ 0.0f, 0.0f });
+    gradient.EndPoint({ 1.0f, 1.0f });
+    gradient.ColorStops().Append(m_ui.compositor.CreateColorGradientStop(0.0f, sky.from));
+    gradient.ColorStops().Append(m_ui.compositor.CreateColorGradientStop(1.0f, sky.to));
+    m_skyCircle->shape.FillBrush(gradient);
+    m_skyIcon->SetText(std::wstring(1, sky.glyph));
+    const float badge = m_sky.Size().x;
+    m_skyIcon->SetPosition(std::round((badge - m_skyIcon->Width()) / 2.0f), std::round((badge - m_skyIcon->Height()) / 2.0f));
+}
+
+void PeekView::ScheduleTick()
+{
+    if (!m_tick)
+    {
+        m_tick = winrt::Windows::System::DispatcherQueue::GetForCurrentThread().CreateTimer();
+        m_tick.IsRepeating(false);
+        m_tick.Tick([this](auto&&, auto&&)
+        {
+            if (m_visible)
+            {
+                UpdateClock(ShowsGlance());  // rolls only while the glance is on screen
+                ScheduleTick();
+            }
+        });
+    }
+    // Just after the next whole minute; only while Peek is on screen.
+    SYSTEMTIME now{};
+    GetLocalTime(&now);
+    const int untilNextMinute = (60 - now.wSecond) * 1000 - now.wMilliseconds + 50;
+    m_tick.Stop();
+    m_tick.Interval(std::chrono::milliseconds(untilNextMinute));
+    m_tick.Start();
+}
+
+void PeekView::ApplyBattery(bool animate)
+{
+    // A desktop PC without a battery: just the time and date.
+    const float shown = m_power.hasBattery ? 1.0f : 0.0f;
+    m_battery.Opacity(shown);
+    m_batteryPercent->Visual().Opacity(shown);
+    m_batteryDetail->Visual().Opacity(0.6f * shown);
+    if (!m_power.hasBattery)
+    {
+        return;
+    }
+
+    m_batteryFill->shape.FillBrush(m_ui.compositor.CreateColorBrush(BatteryColor(BatteryToneOf(m_power))));
+    m_bolt->Visual().Opacity(m_power.charging ? 1.0f : 0.0f);
+    const float level = std::clamp(m_power.percent / 100.0f, 0.04f, 1.0f);
+    if (animate)
+    {
+        Motion::EaseTo(m_batteryFill->visual, L"Scale", Motion::float3{ level, 1.0f, 1.0f }, 450);
+    }
+    else
+    {
+        m_batteryFill->visual.StopAnimation(L"Scale");
+        m_batteryFill->visual.Scale({ level, 1.0f, 1.0f });
+    }
+    m_batteryPercent->SetText(std::format(L"{} %", m_power.percent), animate);
+    m_batteryDetail->SetText(PowerDescription(m_power));
+
+    // Right-aligned: [84 %] [battery] on the time's line, how long it lasts under it.
+    const float right = m_width - m_ui.Px(14.0f);
+    const float top = std::round((m_height - m_clock->Height() - m_date->Height()) / 2.0f);
+    const float middle = top + m_clock->Height() / 2.0f;
+    const float batteryX = right - m_battery.Size().x;
+    m_battery.Offset({ batteryX, std::round(middle - m_battery.Size().y / 2.0f), 0.0f });
+    m_batteryPercent->SetPosition(batteryX - m_ui.Px(6.0f) - m_batteryPercent->Width(), std::round(middle - m_batteryPercent->Height() / 2.0f));
+    m_batteryDetail->SetPosition(right - m_batteryDetail->Width(), top + m_clock->Height());
+}
+
 void PeekView::Apply(bool animate)
 {
     const bool timer = m_timer.mode != TimerMode::None;
@@ -149,7 +398,7 @@ void PeekView::Apply(bool animate)
             visual.Opacity(opacity);
         }
     };
-    fade(m_empty, !timer && !has ? 1.0f : 0.0f);
+    fade(m_glance, ShowsGlance() ? 1.0f : 0.0f);
     fade(m_playing, !timer && has ? 1.0f : 0.0f);
     fade(m_timerLayer, timer ? 1.0f : 0.0f);
     // Only the buttons on show take the mouse.
