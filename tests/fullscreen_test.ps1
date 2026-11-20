@@ -124,6 +124,53 @@ public static class TestWin
     public static void PutAbove(IntPtr window) { SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0, 0x1 | 0x2 | 0x10); }
     public static void PutBack(IntPtr window) { SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0, 0x1 | 0x2 | 0x10); }
 
+    // --- The edge sensors (PLAN.md Phase 9) ---
+    delegate bool EnumWindowsProc(IntPtr h, IntPtr l);
+    [DllImport("user32")] static extern bool EnumWindows(EnumWindowsProc f, IntPtr l);
+    [DllImport("user32", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
+    [DllImport("user32")] static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+
+    static bool OnScreen(RECT window, RECT screen)
+    {
+        int x = (window.Left + window.Right) / 2;
+        return x >= screen.Left && x < screen.Right && window.Top >= screen.Top && window.Top < screen.Bottom;
+    }
+
+    // The sensor at the top of `screen`, or IntPtr.Zero.
+    public static IntPtr SensorOn(RECT screen)
+    {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows((h, l) =>
+        {
+            var name = new System.Text.StringBuilder(64);
+            GetClassName(h, name, 64);
+            RECT r;
+            if (name.ToString() == "Island.EdgeSensor" && GetWindowRect(h, out r) && OnScreen(r, screen)) { found = h; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    public static bool SensorShown(RECT screen)
+    {
+        IntPtr sensor = SensorOn(screen);
+        return sensor != IntPtr.Zero && IsWindowVisible(sensor);
+    }
+
+    // As if the mouse touched that screen's sensor: a posted mouse move (the mouse isn't moved).
+    public static void TouchSensor(RECT screen)
+    {
+        IntPtr sensor = SensorOn(screen);
+        RECT r; GetWindowRect(sensor, out r);
+        PostMessage(sensor, 0x0200, IntPtr.Zero, new IntPtr(((r.Right - r.Left) / 2) & 0xFFFF));  // WM_MOUSEMOVE
+    }
+
+    public static bool IslandOn(RECT screen)
+    {
+        RECT r; GetWindowRect(FindWindow("Island.Pill", null), out r);
+        return OnScreen(r, screen);
+    }
+
     // Would the mouse at the top edge reach the island, or something on top of it?
     public static bool IslandReachable()
     {
@@ -236,9 +283,15 @@ try {
     if ($monitors.Count -ge 2) {
         $other = $monitors[($primaryIndex + 1) % $monitors.Count]
 
-        # 5. Fullscreen on the other monitor doesn't affect the island.
+        # 5. Fullscreen on the other monitor doesn't affect the island, and
+        #    that screen's sensor goes off: nothing on top of a game (M5).
+        Check "a sensor waits on the other screen" ([TestWin]::SensorShown($other)) ""
         $otherGame = [TestWin]::Create($other, $true)
         [TestWin]::ClickToFront($otherGame)
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        while ([TestWin]::SensorShown($other) -and $watch.ElapsedMilliseconds -lt 1000) { [TestWin]::Pump(5) }
+        $offMs = $watch.ElapsedMilliseconds
+        Check "no sensor over a game on the other screen" (-not [TestWin]::SensorShown($other) -and $offMs -lt 200) "off after $offMs ms (limit 200)"
         [TestWin]::Pump(700)
         Check "stays for fullscreen on the other monitor" ([TestWin]::WaitForIsland($true, 100) -ge 0) ""
 
@@ -254,6 +307,19 @@ try {
         [void][TestWin]::DestroyWindow($otherGame)
         $showMs = [TestWin]::WaitForIsland($true, 3000)
         Check "comes back after both close" ($showMs -ge 0) "after $showMs ms"
+
+        # 7. A game on the main screen: pushing up on the other screen brings
+        #    the island there; the main screen's sensor stays off (M6).
+        $game = [TestWin]::Create($primary, $true)
+        [TestWin]::ClickToFront($game)
+        [void][TestWin]::WaitForIsland($false, 1000)
+        [TestWin]::Pump(300)
+        [TestWin]::TouchSensor($other)
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        while (-not ([TestWin]::IslandOn($other) -and [TestWin]::WaitForIsland($true, 1) -ge 0) -and $watch.ElapsedMilliseconds -lt 1000) { [TestWin]::Pump(5) }
+        Check "a game on the main screen: up on the other brings it there" ([TestWin]::IslandOn($other) -and [TestWin]::WaitForIsland($true, 1) -ge 0) "after $($watch.ElapsedMilliseconds) ms"
+        Check "no sensor over the game on the main screen" (-not [TestWin]::SensorShown($primary)) ""
+        [void][TestWin]::DestroyWindow($game)
     }
     else {
         Check "other-monitor tests" $true "skipped: only one monitor connected"

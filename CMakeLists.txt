@@ -57,6 +57,7 @@ add_library(IslandCore STATIC
     src/views/IdleView.cpp
     src/views/PeekView.cpp
     src/views/View.cpp
+    src/platform/EdgeSensors.cpp
     src/platform/Log.cpp
     src/platform/Settings.cpp
     src/platform/Startup.cpp

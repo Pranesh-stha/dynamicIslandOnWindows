@@ -72,11 +72,15 @@ void GlassCapture::SetRegion(HMONITOR monitor, int width, int height)
     m_monitor = monitor;
     m_width = std::max(1, width);
     m_height = std::max(1, height);
-    if (monitorChanged && m_running)
+    if (monitorChanged)
     {
         // The island moved to another monitor: capture that one instead.
-        Stop();
-        Start();
+        m_item = nullptr;
+        if (m_running)
+        {
+            Stop();
+            Start();
+        }
     }
 }
 
@@ -274,7 +278,7 @@ void GlassCapture::OnFrame()
     m_freshFrame = true;
     if (first && m_starts++ < 3)
     {
-        Log::Info(L"glass: first frame {} ms after the island appeared", GetTickCount64() - m_started);
+        Log::Info(L"glass: first frame {} ms after the island appeared (screen {}x{})", GetTickCount64() - m_started, size.Width, size.Height);
     }
     if (m_snapshot)
     {

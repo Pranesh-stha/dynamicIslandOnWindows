@@ -17,7 +17,7 @@
   - RAM ≤ 100 MB (target 20–40 MB).
   - 0 % CPU when idle.
   - Never steal focus.
-  - Hide whenever anything is fullscreen on the primary monitor.
+  - Hide whenever anything is fullscreen on the screen the island is on. No edge sensor on any screen with something fullscreen; other screens keep working (PLAN.md Phase 9).
   - No injection, no global input hooks, no handles to game processes.
 - **Build only with MSVC through the presets:** `cmake --preset default`, then `cmake --build --preset debug` or `release`. MinGW g++ is on PATH and must not be used.
 - **Compositor rule (PLAN.md risk D11):** content that isn't visible never animates, and replaced visual layers are released late (`View::Retire`). Breaking this crashed DWM and blanked the user's screen.

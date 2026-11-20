@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cwctype>
+#include <format>
 #include <initializer_list>
 
 #include "platform/Log.h"
@@ -127,11 +128,45 @@ namespace
         }
         return window ? className : L"-";
     }
+
+    BOOL CALLBACK AddScreen(HMONITOR monitor, HDC, LPRECT, LPARAM data)
+    {
+        MONITORINFO info{ sizeof(info) };
+        if (GetMonitorInfoW(monitor, &info))
+        {
+            auto& screens = *reinterpret_cast<std::vector<FullscreenWatcher::Screen>*>(data);
+            FullscreenWatcher::Screen screen;
+            screen.monitor = monitor;
+            screen.rect = info.rcMonitor;
+            screen.primary = (info.dwFlags & MONITORINFOF_PRIMARY) != 0;
+            screens.push_back(screen);
+        }
+        return TRUE;
+    }
+
+    // Every screen, the main one first.
+    std::vector<FullscreenWatcher::Screen> ListScreens()
+    {
+        std::vector<FullscreenWatcher::Screen> screens;
+        EnumDisplayMonitors(nullptr, nullptr, AddScreen, reinterpret_cast<LPARAM>(&screens));
+        std::stable_partition(screens.begin(), screens.end(), [](const FullscreenWatcher::Screen& screen) { return screen.primary; });
+        return screens;
+    }
+
+    std::wstring ScreenName(const FullscreenWatcher::Screen& screen)
+    {
+        if (screen.primary)
+        {
+            return L"main screen";
+        }
+        return std::format(L"screen {}x{} at ({}, {})", screen.rect.right - screen.rect.left, screen.rect.bottom - screen.rect.top,
+            screen.rect.left, screen.rect.top);
+    }
 }
 
 FullscreenWatcher::~FullscreenWatcher()
 {
-    WatchWindows(nullptr, nullptr);
+    WatchWindows({});
     for (HWINEVENTHOOK hook : { m_foregroundHook, m_moveSizeHook, m_minimizeHook })
     {
         if (hook)
@@ -151,8 +186,8 @@ FullscreenWatcher::~FullscreenWatcher()
     s_instance = nullptr;
 }
 
-bool FullscreenWatcher::Start(HINSTANCE instance, std::function<void(State)> onChange, std::function<void(bool)> onMoveSize,
-                              std::function<void()> onChecked)
+bool FullscreenWatcher::Start(HINSTANCE instance, std::function<void(const std::vector<Screen>&)> onChange,
+                              std::function<void(bool)> onMoveSize, std::function<void()> onChecked)
 {
     s_instance = this;
     m_onChange = std::move(onChange);
@@ -256,7 +291,7 @@ void FullscreenWatcher::HandleWinEvent(DWORD event, HWND hwnd, LONG idObject, LO
     // Location events also fire for the text caret and other parts of a
     // window. Only the window itself matters.
     const bool isWatchedWindow = idObject == OBJID_WINDOW && idChild == CHILDID_SELF && hwnd &&
-                                 (hwnd == m_watched[0] || hwnd == m_watched[1]);
+                                 std::find(m_watched.begin(), m_watched.end(), hwnd) != m_watched.end();
     switch (event)
     {
     case EVENT_SYSTEM_FOREGROUND:
@@ -313,64 +348,57 @@ void FullscreenWatcher::Evaluate()
     m_evaluatePending = false;
     KillTimer(m_hwnd, kEvaluateTimer);
 
-    HMONITOR primary = MonitorFromPoint({ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
-    MONITORINFO monitorInfo{ sizeof(monitorInfo) };
-    GetMonitorInfoW(primary, &monitorInfo);
-    const RECT& monitor = monitorInfo.rcMonitor;
-
-    // 1. The foreground window, if it's an app on the primary monitor. This
-    //    catches exclusive-fullscreen games, which are always-on-top windows.
+    // The foreground window, if it's an app (not the desktop or the taskbar).
+    // This catches exclusive-fullscreen games, which are always-on-top windows.
     HWND foreground = GetForegroundWindow();
-    HWND frontApp = nullptr;
-    if (foreground && !IsOwnWindow(foreground) && !IsDesktop(foreground) && !IsShellSurface(foreground) &&
-        MonitorFromWindow(foreground, MONITOR_DEFAULTTONULL) == primary)
-    {
-        frontApp = foreground;
-    }
+    HWND frontApp = foreground && !IsOwnWindow(foreground) && !IsDesktop(foreground) && !IsShellSurface(foreground)
+        ? foreground : nullptr;
+    const HMONITOR frontScreen = frontApp ? MonitorFromWindow(frontApp, MONITOR_DEFAULTTONULL) : nullptr;
+    const HMONITOR foregroundScreen = foreground ? MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST) : nullptr;
 
-    // 2. The app window directly under the island.
-    HWND under = FindWindowUnderIsland(monitor);
-
-    WatchWindows(frontApp, under);
-
-    const FrontKind frontKind = frontApp ? ClassifyWindow(FactsOf(frontApp), monitor) : FrontKind::Normal;
-    const FrontKind underKind = under ? ClassifyWindow(FactsOf(under), monitor) : FrontKind::Normal;
-
-    State state;
-    state.hide = frontKind == FrontKind::Fullscreen || underKind == FrontKind::Fullscreen;
-    state.slim = frontKind == FrontKind::Maximized || underKind == FrontKind::Maximized;
-
-    // 3. What Windows itself knows: exclusive D3D fullscreen and presentation mode.
+    // What Windows itself knows: exclusive D3D fullscreen and presentation mode.
     QUERY_USER_NOTIFICATION_STATE notificationState{};
-    if (SUCCEEDED(SHQueryUserNotificationState(&notificationState)))
+    const bool known = SUCCEEDED(SHQueryUserNotificationState(&notificationState));
+    const bool presentation = known && notificationState == QUNS_PRESENTATION_MODE;
+    const bool exclusive = known && notificationState == QUNS_RUNNING_D3D_FULL_SCREEN;
+    // The blocklist from settings.json, for anything the checks above miss.
+    const bool blocked = foreground && IsBlocked(foreground);
+
+    // Each screen on its own: the front window if it's there, and the top
+    // app window at that screen's island spot.
+    std::vector<Screen> screens = ListScreens();
+    std::vector<HWND> watched{ frontApp };
+    for (Screen& screen : screens)
     {
-        if (notificationState == QUNS_PRESENTATION_MODE ||
-            (notificationState == QUNS_RUNNING_D3D_FULL_SCREEN && foreground &&
-             MonitorFromWindow(foreground, MONITOR_DEFAULTTONEAREST) == primary))
+        const HWND under = FindWindowUnderIsland(screen.rect);
+        watched.push_back(under);
+        ScreenFacts facts;
+        const bool frontHere = frontApp && frontScreen == screen.monitor;
+        facts.front = frontHere ? ClassifyWindow(FactsOf(frontApp), screen.rect) : FrontKind::Normal;
+        facts.under = under ? ClassifyWindow(FactsOf(under), screen.rect) : FrontKind::Normal;
+        facts.exclusiveFullscreen = exclusive && foregroundScreen == screen.monitor;
+        facts.blocked = blocked && foregroundScreen == screen.monitor;
+        facts.presentation = presentation;
+        const ScreenDecision decision = DecideScreen(facts);
+        screen.hide = decision.hide;
+        screen.slim = decision.slim;
+
+        const auto before = std::find_if(m_screens.begin(), m_screens.end(), [&](const Screen& s) { return s.monitor == screen.monitor; });
+        if (before == m_screens.end() || before->hide != screen.hide || before->slim != screen.slim)
         {
-            state.hide = true;
+            Log::Info(L"{}: front: {} ({}), under island: {} ({}) -> {}", ScreenName(screen),
+                ClassOf(frontHere ? frontApp : nullptr), KindName(facts.front), ClassOf(under), KindName(facts.under),
+                screen.hide ? L"HIDE" : screen.slim ? L"slim" : L"pill");
         }
     }
+    WatchWindows(watched);
 
-    // 4. The blocklist from settings.json, for anything the checks above miss.
-    if (foreground && IsBlocked(foreground))
+    if (screens != m_screens)
     {
-        state.hide = true;
-    }
-
-    if (state.hide)
-    {
-        state.slim = false;
-    }
-    if (state != m_state)
-    {
-        Log::Info(L"front: {} ({}), under island: {} ({}) -> {}",
-            ClassOf(frontApp), KindName(frontKind), ClassOf(under), KindName(underKind),
-            state.hide ? L"HIDE" : state.slim ? L"slim" : L"pill");
-        m_state = state;
+        m_screens = std::move(screens);
         if (m_onChange)
         {
-            m_onChange(state);
+            m_onChange(m_screens);
         }
     }
     if (m_onChecked)
@@ -379,49 +407,52 @@ void FullscreenWatcher::Evaluate()
     }
 }
 
-void FullscreenWatcher::WatchWindows(HWND first, HWND second)
+void FullscreenWatcher::WatchWindows(const std::vector<HWND>& windows)
 {
     // Watch each window's own thread for moves, resizes, hides and closes.
     // Limiting the hooks to those threads keeps the events rare. Even mouse
     // pointer movement is reported by a system thread, not these ones.
-    m_watched = { first, second };
+    m_watched = windows;
 
-    std::array<DWORD, 2> processIds{};
-    std::array<DWORD, 2> wanted{};
-    for (size_t i = 0; i < 2; ++i)
+    struct Wanted
     {
-        wanted[i] = m_watched[i] ? GetWindowThreadProcessId(m_watched[i], &processIds[i]) : 0;
-    }
-    if (wanted[1] == wanted[0])
+        DWORD thread;
+        DWORD process;
+    };
+    std::vector<Wanted> wanted;
+    for (HWND window : windows)
     {
-        wanted[1] = 0;
+        DWORD process = 0;
+        const DWORD thread = window ? GetWindowThreadProcessId(window, &process) : 0;
+        if (thread && std::none_of(wanted.begin(), wanted.end(), [&](const Wanted& w) { return w.thread == thread; }))
+        {
+            wanted.push_back({ thread, process });
+        }
     }
 
-    for (ThreadHooks& hooks : m_threadHooks)
+    std::erase_if(m_threadHooks, [&](const ThreadHooks& hooks)
     {
-        if (hooks.thread && hooks.thread != wanted[0] && hooks.thread != wanted[1])
+        const bool keep = std::any_of(wanted.begin(), wanted.end(), [&](const Wanted& w) { return w.thread == hooks.thread; });
+        if (!keep)
         {
             UnhookWinEvent(hooks.location);
             UnhookWinEvent(hooks.lifetime);
-            hooks = {};
         }
-    }
-    for (size_t i = 0; i < 2; ++i)
+        return !keep;
+    });
+    for (const Wanted& w : wanted)
     {
-        const DWORD thread = wanted[i];
-        const bool hooked = std::any_of(m_threadHooks.begin(), m_threadHooks.end(),
-            [&](const ThreadHooks& hooks) { return hooks.thread == thread; });
-        if (!thread || hooked)
+        if (std::any_of(m_threadHooks.begin(), m_threadHooks.end(), [&](const ThreadHooks& hooks) { return hooks.thread == w.thread; }))
         {
             continue;
         }
-        auto freeSlot = std::find_if(m_threadHooks.begin(), m_threadHooks.end(),
-            [](const ThreadHooks& hooks) { return hooks.thread == 0; });
-        freeSlot->thread = thread;
-        freeSlot->location = SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE,
-            nullptr, OnWinEvent, processIds[i], thread, WINEVENT_OUTOFCONTEXT);
-        freeSlot->lifetime = SetWinEventHook(EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
-            nullptr, OnWinEvent, processIds[i], thread, WINEVENT_OUTOFCONTEXT);
+        ThreadHooks hooks;
+        hooks.thread = w.thread;
+        hooks.location = SetWinEventHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE,
+            nullptr, OnWinEvent, w.process, w.thread, WINEVENT_OUTOFCONTEXT);
+        hooks.lifetime = SetWinEventHook(EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
+            nullptr, OnWinEvent, w.process, w.thread, WINEVENT_OUTOFCONTEXT);
+        m_threadHooks.push_back(hooks);
     }
 }
 

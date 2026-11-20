@@ -5,6 +5,8 @@
 
 #include <functional>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include <winrt/Windows.System.h>
 #include <winrt/Windows.UI.Composition.h>
@@ -12,6 +14,7 @@
 
 #include "AppMessages.h"
 #include "StateMachine.h"
+#include "platform/EdgeSensors.h"
 #include "platform/Settings.h"
 #include "render/GlassCapture.h"
 #include "render/Graphics.h"
@@ -20,6 +23,7 @@
 #include "services/AudioService.h"
 #include "services/BluetoothService.h"
 #include "services/DisplayService.h"
+#include "services/FullscreenWatcher.h"
 #include "services/NightLightService.h"
 #include "services/PowerService.h"
 #include "services/WifiService.h"
@@ -62,6 +66,10 @@ public:
 
     // A maximized window is under the island: idle becomes a slim line.
     void SetSlim(bool slim);
+
+    // What every screen needs (FullscreenWatcher): the island hides or goes
+    // slim as its own screen says.
+    void SetScreens(const std::vector<FullscreenWatcher::Screen>& screens, bool immediately = false);
 
     // The user is dragging or resizing some window.
     void SetWindowDragActive(bool active);
@@ -130,7 +138,14 @@ private:
     void OnWheel(POINT screenPoint, int delta);
     void SetPointerInside(bool inside);
 
-    void PlaceOnPrimaryMonitor();
+    // Puts the island top-centre on `monitor`, redrawn at its scale if that differs.
+    void PlaceOnMonitor(HMONITOR monitor);
+    // Where it belongs after displays change: its screen if that's still
+    // there, else the main screen.
+    HMONITOR PlacementTarget() const;
+    // A sensor was touched: come to that screen and down, as if the mouse had entered here.
+    void MoveToScreen(HMONITOR screen, POINT touched);
+    void UpdateSensors();  // one on every screen but the island's, off where something is fullscreen
     void SchedulePlacement();
     void Rebuild();
     void ReadSystemColors();
@@ -152,7 +167,7 @@ private:
     Motion::float2 StripSize() const;  // the window while tucked away
     void ShowNow();
     void RaiseIfCovered();  // see KeepOnTop
-    bool Covered() const;   // a visible window above the island overlaps it
+    void ApplyScreen(bool immediately);  // hide or go slim as the island's own screen says
     void PushMedia();
     void PushQuickControls();
     void RebuildControlCenter();
@@ -206,6 +221,11 @@ private:
     winrt::Windows::UI::Color m_systemAccent{};
 
     RECT m_monitor{};
+    HMONITOR m_screen{};       // the screen the island is on
+    std::wstring m_screenName;  // ...its device name, which survives display changes (handles may not)
+    std::vector<FullscreenWatcher::Screen> m_screens;
+    EdgeSensors m_sensors;
+    bool m_placing = false;     // PlaceOnMonitor is moving the window (its own WM_DPICHANGED is expected)
     float m_scale = 0.0f;
     SIZE m_windowSize{};
     bool m_slim = false;           // what the island shows: the line or the pill

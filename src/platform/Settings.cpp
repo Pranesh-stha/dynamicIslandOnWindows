@@ -236,6 +236,7 @@ bool ParseSettings(std::wstring_view text, Settings& out, std::wstring& message)
         const Reader layout = settings.Child(L"layout");
         layout.Bool(L"autoHide", l.autoHide);
         layout.Number(L"revealWidth", l.revealWidth, 40.0f, 2000.0f);
+        layout.Bool(L"followMouse", l.followMouse);
         layout.Number(L"idleWidth", l.idleWidth, 60.0f, 600.0f);
         layout.Number(L"idleHeight", l.idleHeight, 12.0f, 80.0f);
         layout.Number(L"topGap", l.topGap, 0.0f, 40.0f);

@@ -9,6 +9,7 @@
 #include <cmath>
 
 #include "AppMessages.h"
+#include "platform/EdgeSensors.h"
 #include "platform/Log.h"
 #include "views/ControlCenter.h"
 #include "views/ControlKitDemo.h"
@@ -197,7 +198,9 @@ bool IslandWindow::Create(HINSTANCE instance, bool glassSnapshot)
     m_controlCenter = std::make_unique<ControlCenter>(m_ui, content, m_actions);
     m_demoView = std::make_unique<ControlKitDemo>(m_ui, content);
 
-    PlaceOnPrimaryMonitor();
+    // Sensors on the other screens bring the island to them (PLAN.md Phase 9).
+    m_sensors.Create(instance, [this](HMONITOR screen, POINT touched) { MoveToScreen(screen, touched); });
+    PlaceOnMonitor(MonitorFromPoint({ 0, 0 }, MONITOR_DEFAULTTOPRIMARY));  // the main screen to start with
     // Tell us when you unlock the PC (WM_WTSSESSION_CHANGE).
     WTSRegisterSessionNotification(m_hwnd, NOTIFY_FOR_THIS_SESSION);
     return true;
@@ -237,6 +240,12 @@ void IslandWindow::ApplySettings(const Settings& settings)
     m_machine.SetTiming({ m_motion.hoverIntentMs, m_motion.leaveDelayMs, m_motion.expandedLeaveDelayMs, m_showDelayMs });
     UpdateHold();
     Rebuild();
+    if (!m_layout.followMouse && m_scale > 0.0f)
+    {
+        PlaceOnMonitor(MonitorFromPoint({ 0, 0 }, MONITOR_DEFAULTTOPRIMARY));  // following off: the main screen only
+        ApplyScreen(false);
+    }
+    UpdateSensors();
 }
 
 void IslandWindow::Rebuild()
@@ -598,12 +607,13 @@ void IslandWindow::ShowNow()
 void IslandWindow::KeepOnTop()
 {
     RaiseIfCovered();
+    m_sensors.KeepOnTop();
     ::SetTimer(m_hwnd, kTopmostTimer, kTopmostRecheckMs, nullptr);
 }
 
 void IslandWindow::RaiseIfCovered()
 {
-    if (State() == IslandState::Hidden || !IsWindowVisible(m_hwnd) || !Covered())
+    if (State() == IslandState::Hidden || !IsWindowVisible(m_hwnd) || !CoveredByAnotherWindow(m_hwnd))
     {
         return;
     }
@@ -611,25 +621,26 @@ void IslandWindow::RaiseIfCovered()
     Log::Info(L"island raised again (a window had been put above it)");
 }
 
-bool IslandWindow::Covered() const
+void IslandWindow::SetScreens(const std::vector<FullscreenWatcher::Screen>& screens, bool immediately)
 {
-    RECT island{};
-    GetWindowRect(m_hwnd, &island);
-    for (HWND above = GetWindow(m_hwnd, GW_HWNDPREV); above; above = GetWindow(above, GW_HWNDPREV))
+    m_screens = screens;
+    ApplyScreen(immediately);
+    UpdateSensors();
+}
+
+void IslandWindow::ApplyScreen(bool immediately)
+{
+    // The island's own screen; not in the list (displays just changed): the
+    // main screen's, which the list starts with.
+    auto mine = std::find_if(m_screens.begin(), m_screens.end(),
+        [&](const FullscreenWatcher::Screen& screen) { return screen.monitor == m_screen; });
+    if (mine == m_screens.end())
     {
-        if (!IsWindowVisible(above))
-        {
-            continue;
-        }
-        BOOL cloaked = FALSE;  // e.g. Store apps' frames on other virtual desktops: "visible" but not shown
-        DwmGetWindowAttribute(above, DWMWA_CLOAKED, &cloaked, sizeof(cloaked));
-        RECT rect{}, overlap{};
-        if (!cloaked && GetWindowRect(above, &rect) && IntersectRect(&overlap, &island, &rect))
-        {
-            return true;
-        }
+        mine = m_screens.begin();
     }
-    return false;
+    const bool known = mine != m_screens.end();
+    SetSlim(known && mine->slim);
+    SetFullscreenHidden(known && mine->hide, immediately);
 }
 
 // --- Showing a state ---------------------------------------------------------
@@ -835,7 +846,9 @@ Motion::float2 IslandWindow::StripSize() const
 {
     // Tucked away, the window is an invisible strip along the top edge (like
     // an auto-hide taskbar's): the mouse touching it brings the pill down.
-    return { m_ui.EvenPx(m_layout.revealWidth), std::max(2.0f, std::floor(m_ui.scale * 2.0f)) };
+    // The same strip as the other screens' sensors.
+    const RECT strip = StripRect(m_monitor, m_ui.scale, m_layout.revealWidth);
+    return { static_cast<float>(strip.right - strip.left), static_cast<float>(strip.bottom - strip.top) };
 }
 
 void IslandWindow::ResizeWindow(float width, float height)
@@ -863,17 +876,22 @@ Motion::float2 IslandWindow::ToLayer(POINT point, const View& view) const
 
 // --- Placement ---------------------------------------------------------------
 
-void IslandWindow::PlaceOnPrimaryMonitor()
+void IslandWindow::PlaceOnMonitor(HMONITOR monitor)
 {
-    // The primary monitor is the one that contains the point (0, 0).
-    HMONITOR monitor = MonitorFromPoint({ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
-    MONITORINFO info{ sizeof(info) };
-    GetMonitorInfoW(monitor, &info);
+    MONITORINFOEXW info{};
+    info.cbSize = sizeof(info);
+    if (!GetMonitorInfoW(monitor, &info))
+    {
+        monitor = MonitorFromPoint({ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);  // it just went away: the main screen
+        GetMonitorInfoW(monitor, &info);
+    }
 
     UINT dpiX = USER_DEFAULT_SCREEN_DPI;
     UINT dpiY = USER_DEFAULT_SCREEN_DPI;
     GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &dpiX, &dpiY);
     const float scale = static_cast<float>(dpiX) / USER_DEFAULT_SCREEN_DPI;
+    m_screen = monitor;  // (handles can change when displays change, even when nothing else does)
+    m_screenName = info.szDevice;
 
     const RECT& screen = info.rcMonitor;
     if (EqualRect(&screen, &m_monitor) && scale == m_scale)
@@ -882,10 +900,11 @@ void IslandWindow::PlaceOnPrimaryMonitor()
     }
     const bool widthChanged = screen.right - screen.left != m_monitor.right - m_monitor.left;
     m_monitor = screen;
-    Log::Info(L"primary monitor {}x{} at ({}, {}), scale {:.0f} %",
+    Log::Info(L"on the {} {}x{} at ({}, {}), scale {:.0f} %", (info.dwFlags & MONITORINFOF_PRIMARY) ? L"main screen" : L"screen",
         screen.right - screen.left, screen.bottom - screen.top, screen.left, screen.top, scale * 100.0f);
 
     m_ui.screenWidth = static_cast<float>(screen.right - screen.left);  // the control center fits inside it
+    m_placing = true;  // landing on a screen with another scale sends WM_DPICHANGED: expected
     if (scale != m_scale || widthChanged)
     {
         m_scale = scale;
@@ -895,7 +914,79 @@ void IslandWindow::PlaceOnPrimaryMonitor()
     {
         m_windowSize = {};
         ShowState(false);
+        UpdateGlass();  // clear glass copies this screen now
     }
+    m_placing = false;
+}
+
+HMONITOR IslandWindow::PlacementTarget() const
+{
+    const HMONITOR main = MonitorFromPoint({ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
+    if (!m_layout.followMouse || m_screenName.empty())
+    {
+        return main;
+    }
+    // Its screen, found by name: handles can change when displays change.
+    struct Search
+    {
+        const std::wstring* name;
+        HMONITOR found;
+    } search{ &m_screenName, nullptr };
+    EnumDisplayMonitors(nullptr, nullptr, [](HMONITOR monitor, HDC, LPRECT, LPARAM data) -> BOOL
+    {
+        auto& search = *reinterpret_cast<Search*>(data);
+        MONITORINFOEXW info{};
+        info.cbSize = sizeof(info);
+        if (GetMonitorInfoW(monitor, &info) && *search.name == info.szDevice)
+        {
+            search.found = monitor;
+            return FALSE;
+        }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&search));
+    return search.found ? search.found : main;
+}
+
+void IslandWindow::MoveToScreen(HMONITOR screen, POINT touched)
+{
+    const auto target = std::find_if(m_screens.begin(), m_screens.end(),
+        [&](const FullscreenWatcher::Screen& s) { return s.monitor == screen; });
+    if (!m_layout.followMouse || m_posed || screen == m_screen || target == m_screens.end() || target->hide)
+    {
+        return;  // (a sensor over something fullscreen is off anyway)
+    }
+    const uint64_t started = GetTickCount64();
+    // Leave this screen at once: back to resting, without animating here.
+    if (State() != IslandState::Hidden)
+    {
+        m_machine.ShowDirectly(m_layout.autoHide && !Held() ? IslandState::Tucked : IslandState::Idle);
+    }
+    PlaceOnMonitor(screen);
+    ApplyScreen(/*immediately*/ true);  // hidden for a game over there? Not here: come back at once
+    UpdateSensors();
+    Log::Info(L"island moved here in {} ms", GetTickCount64() - started);
+    // As if the mouse had just reached the top edge here: the pill comes down.
+    if (State() != IslandState::Hidden)
+    {
+        POINT point = touched;
+        ScreenToClient(m_hwnd, &point);
+        OnMouseMove(point);
+    }
+}
+
+void IslandWindow::UpdateSensors()
+{
+    std::vector<EdgeSensors::Spot> spots;
+    if (m_layout.followMouse && m_screens.size() > 1)
+    {
+        for (const FullscreenWatcher::Screen& screen : m_screens)
+        {
+            // Off on the island's own screen (its tucked strip is there), and
+            // over anything fullscreen: never on top of a game.
+            spots.push_back({ screen.monitor, screen.rect, screen.monitor == m_screen || screen.hide });
+        }
+    }
+    m_sensors.Update(spots, m_layout.revealWidth);
 }
 
 void IslandWindow::SchedulePlacement()
@@ -1108,8 +1199,13 @@ LRESULT IslandWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPAR
         }
         return 0;
 
+    case WM_DPICHANGED:     // display scale changed, e.g. 125 % -> 175 % (or we just moved it to such a screen)
+        if (!m_placing)
+        {
+            SchedulePlacement();
+        }
+        return 0;
     case WM_DISPLAYCHANGE:  // monitor plugged/unplugged, resolution or primary monitor changed
-    case WM_DPICHANGED:     // display scale changed, e.g. 125 % -> 175 %
     case WM_SETTINGCHANGE:  // display settings changed
         SchedulePlacement();
         return 0;
@@ -1119,7 +1215,8 @@ LRESULT IslandWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPAR
         {
         case kPlacementTimer:
             KillTimer(hwnd, kPlacementTimer);
-            PlaceOnPrimaryMonitor();
+            PlaceOnMonitor(PlacementTarget());  // its screen if still there, else the main one
+            UpdateSensors();
             if (m_onDisplaysChanged && message == WM_TIMER)
             {
                 m_onDisplaysChanged();
@@ -1145,6 +1242,7 @@ LRESULT IslandWindow::HandleMessage(HWND hwnd, UINT message, WPARAM wParam, LPAR
         case kTopmostTimer:
             KillTimer(hwnd, kTopmostTimer);
             RaiseIfCovered();
+            m_sensors.KeepOnTop();
             return 0;
         }
         break;

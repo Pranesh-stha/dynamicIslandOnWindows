@@ -22,6 +22,9 @@
     // pill always shows (a slim line over maximized windows).
     "autoHide": true,
     "revealWidth": 300,    // how wide that spot at the top edge is
+    // With two or more screens: the island comes down on whichever screen
+    // you push the mouse up on. false = only on the main screen.
+    "followMouse": true,
     "idleWidth": 200,      // the resting pill
     "idleHeight": 34,
     "topGap": 6,           // space between the top of the screen and the island

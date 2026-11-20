@@ -37,3 +37,24 @@ struct WindowFacts
 // borders even stick out past the edges), so the frame style is what tells
 // the two apart.
 FrontKind ClassifyWindow(const WindowFacts& window, const RECT& monitor);
+
+// What one screen needs from the island (PLAN.md Phase 9): `hide` when
+// something covers it all (no island, no edge sensor there), `slim` when a
+// maximized window is under the island's spot. A game on one screen leaves
+// the others alone; presentation mode hides every screen.
+struct ScreenFacts
+{
+    FrontKind front = FrontKind::Normal;  // the front window, if it's on this screen
+    FrontKind under = FrontKind::Normal;  // the top app window at this screen's island spot
+    bool exclusiveFullscreen = false;     // Windows says "D3D fullscreen", and the front window is on this screen
+    bool blocked = false;                 // the front window is on this screen and its exe is on the blocklist
+    bool presentation = false;            // presentation mode: every screen
+};
+
+struct ScreenDecision
+{
+    bool hide = false;
+    bool slim = false;
+};
+
+ScreenDecision DecideScreen(const ScreenFacts& facts);

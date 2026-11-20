@@ -40,7 +40,8 @@ and opens into a full control center 🎛️. And the moment a game goes fullscr
 | 🔋 **Charging moment** | Plug the charger in and a little battery fills up in the pill for 3 seconds. |
 | 🎙️ **Quick toggles** | Mute the microphone, Night light, Keep awake (no screen sleep), and a **Sleep** button that locks and sleeps the PC. |
 | 🫥 **Out of your way** | Hides like an auto-hide taskbar: push the mouse to the top-middle to bring it down. |
-| 🎮 **Game-safe** | Vanishes within **10 ms** when anything goes fullscreen, and never steals focus from your game. |
+| 🖥️🖥️ **Follows your mouse** | Two screens (or more)? Push up at the top-middle of **any** of them and the island comes over to that one, sharp at that screen's scale. |
+| 🎮 **Game-safe** | Vanishes within **10 ms** when anything goes fullscreen on its screen, and never steals focus from your game. |
 | 🧊 **Feels nice** | Live see-through glass, springy morphs that change direction smoothly, ripples where you click, rolling digits. |
 
 <br>
@@ -124,7 +125,7 @@ Click Island's tray icon (the **^** next to the clock) and tick **Start with Win
 
 | You… | Island… |
 |---|---|
-| 👆 push the mouse to the **top edge, in the middle** | slides down as a little pill |
+| 👆 push the mouse to the **top edge, in the middle** (of any screen) | slides down as a little pill, on that screen |
 | 🖱️ rest the mouse on the pill | grows into **Peek**: the song with play / pause and skip |
 | 👇 **click** it | opens the **control center** |
 | 🏃 move the mouse away | tucks itself away again |
@@ -175,16 +176,18 @@ Windows counts CPU time in 15.6 ms steps, so 0.10 % over 15 seconds is a single 
 |:---:|:---:|:---:|:---:|
 | **~0.3 s** | **0–10 ms** | **1.4 MB**, one exe | **35 MB** |
 
+<sub>🖥️🖥️ Two screens with different scaling (say 125 % and 175 %)? The first move to the other screen redraws everything at its scale, and Windows keeps about 15 MB more graphics memory from then on: about 55 MB in all, still far below the 100 MB limit. A move takes under 50 ms.</sub>
+
 <sub>Measure it on your own PC: `pwsh -File tests\benchmark.ps1` (needs PowerShell 7; hands-free, about 5 minutes).</sub>
 
 <br>
 
 ## 🎮 Safe for games
 
-- 🙈 **Hides whenever anything covers your whole main screen:** games in fullscreen or borderless "windowed fullscreen", F11 in a browser, fullscreen video. It comes back half a second after you leave, so quick alt-tabs don't make it flicker.
+- 🙈 **Hides whenever anything covers the whole screen it's on:** games in fullscreen or borderless "windowed fullscreen", F11 in a browser, fullscreen video. It comes back half a second after you leave, so quick alt-tabs don't make it flicker.
 - 🧘 **Never steals focus.** Clicking Island never takes the keyboard away from your game or your typing.
 - 🤝 **Doesn't touch other programs:** no code injection, no global keyboard or mouse hooks, no reading other apps' memory.
-- 🖥️ **Two monitors?** A game fullscreen on the *other* screen doesn't hide it.
+- 🖥️ **Two monitors?** A game fullscreen on one screen leaves the other one alone: push up there and the island comes over. On the game's screen, pushing up does nothing (there's no sensor on a screen with something fullscreen).
 - 🧯 **Escape hatch:** if a game is ever missed, add its exe name to `games.blocklist` in the settings.
 
 <br>
@@ -196,6 +199,7 @@ Tray icon → **Open settings.json**. Save the file and the change shows up **ri
 | Setting | What it does | Default |
 |---|---|---|
 | `layout.autoHide` | Tuck away until the mouse touches the top. `false` = always show the pill | `true` |
+| `layout.followMouse` | Come to whichever screen you push up on. `false` = the main screen only | `true` |
 | `glass.style` | 🧊 `"live"` see-through · `"clear"` iPhone-like lens glass · `"frosted"` Windows' heavy blur | `"live"` |
 | `glass.frost` | How much blur goes over the live glass (0 = none, 1 = frosted) | `0.85` |
 | `glass.tintOpacity` | How dark the glass is (0 = clear, 1 = solid) | `0.45` |
@@ -234,7 +238,7 @@ Removes the app, its Start menu entry and the "Start with Windows" shortcut. Add
 
 <br>
 
-It's tucked away, like an auto-hide taskbar. Push the mouse **all the way to the top edge, in the middle** of your main screen. You can also check the tray (^ next to the clock) for its icon. Prefer it always visible? Set `layout.autoHide` to `false`.
+It's tucked away, like an auto-hide taskbar. Push the mouse **all the way to the top edge, in the middle** of any screen (after a restart it starts on your main screen). You can also check the tray (^ next to the clock) for its icon. Prefer it always visible? Set `layout.autoHide` to `false`.
 
 </details>
 
@@ -261,7 +265,7 @@ Use the exact command above. `-ExecutionPolicy Bypass` lets that one script run 
 
 <br>
 
-Tell me which game and how it runs (fullscreen / borderless / windowed). Meanwhile, add the game's exe name to `games.blocklist` in `settings.json`, and Island will hide whenever that game is in front.
+Tell me which game and how it runs (fullscreen / borderless / windowed). Meanwhile, add the game's exe name to `games.blocklist` in `settings.json`, and Island will hide (on that game's screen) whenever that game is in front.
 
 </details>
 
@@ -286,10 +290,11 @@ The `.ps1` test scripts need PowerShell 7 (`pwsh`) and never move your mouse, ex
 
 | Test | What it checks |
 |---|---|
-| `ctest` | 228 unit checks (state machine, springs, timer maths, media picking, …) |
+| `ctest` | 248 unit checks (state machine, springs, timer maths, media picking, …) |
 | `build\Release\IslandTests.exe --hardware` | real volume, brightness and mixer (moved 1 % and back) |
 | `tests\visual_check.ps1` | screenshots of every state, morph timings, hands-free |
-| `tests\fullscreen_test.ps1` | hides for fullscreen windows (clicks its own test windows: hands off the mouse ~15 s) |
+| `tests\fullscreen_test.ps1` | hides for fullscreen windows, on each screen (clicks its own test windows: hands off the mouse ~20 s) |
+| `tests\monitor_test.ps1` | two screens: the island follows the mouse, quickly, without leaks (needs a second screen) |
 | `tests\media_test.ps1` | now playing, with a silent test track |
 | `tests\timer_check.ps1` | timer, stopwatch and the charging moment |
 | `tests\soak_test.ps1` | appear / hide again and again, watching memory and handles |

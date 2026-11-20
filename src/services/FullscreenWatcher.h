@@ -2,21 +2,21 @@
 
 #include <windows.h>
 
-#include <array>
 #include <functional>
 #include <string>
 #include <vector>
 
 #include "services/WindowClassifier.h"
 
-// Watches what's in front of the primary monitor and reports whether the
-// island must hide (something covers the whole screen) or go slim (a
-// maximized window is under it).
+// Watches what's in front of each screen and reports, per screen, whether
+// the island must hide there (something covers the whole screen: no island
+// and no edge sensor on it) or go slim (a maximized window is under its spot).
+// A game on one screen leaves the other screens alone (PLAN.md Phase 9).
 //
-// It looks at two windows: the foreground window (if it's on the primary
-// monitor), and the top app window directly under the island's spot. The
-// second one keeps the island hidden over a fullscreen video while you click
-// something on the other monitor.
+// For each screen it looks at the foreground window (if it's on that screen)
+// and the top app window directly under that screen's island spot. The
+// second one keeps a screen "hidden" over a fullscreen video while you click
+// something on another screen.
 //
 // Everything is event-driven. Windows tells us when the foreground changes,
 // when a watched window moves or resizes, and when the taskbar's own
@@ -25,11 +25,18 @@
 class FullscreenWatcher
 {
 public:
-    struct State
+    struct Screen
     {
+        HMONITOR monitor = nullptr;
+        RECT rect{};           // the whole screen, in physical pixels
+        bool primary = false;  // the main screen
         bool hide = false;
         bool slim = false;
-        bool operator==(const State&) const = default;
+        bool operator==(const Screen& other) const
+        {
+            return monitor == other.monitor && EqualRect(&rect, &other.rect) && primary == other.primary &&
+                   hide == other.hide && slim == other.slim;
+        }
     };
 
     FullscreenWatcher() = default;
@@ -37,14 +44,15 @@ public:
     FullscreenWatcher& operator=(const FullscreenWatcher&) = delete;
     ~FullscreenWatcher();
 
+    // onChange: every screen, the main one first, when any of them changed.
     // onMoveSize(true/false): the user started/stopped dragging or resizing a window.
     // onChecked: after every look at the windows (the front window may have
-    // changed), whether or not the state changed.
-    bool Start(HINSTANCE instance, std::function<void(State)> onChange, std::function<void(bool)> onMoveSize,
-               std::function<void()> onChecked);
+    // changed), whether or not anything changed.
+    bool Start(HINSTANCE instance, std::function<void(const std::vector<Screen>&)> onChange,
+               std::function<void(bool)> onMoveSize, std::function<void()> onChecked);
     void SetBlocklist(std::vector<std::wstring> lowerCaseExeNames);
     void Reevaluate();
-    State Current() const { return m_state; }
+    const std::vector<Screen>& Screens() const { return m_screens; }
 
 private:
     struct ThreadHooks
@@ -61,20 +69,20 @@ private:
     void HandleWinEvent(DWORD event, HWND hwnd, LONG idObject, LONG idChild);
     void ScheduleEvaluate();
     void Evaluate();
-    void WatchWindows(HWND first, HWND second);
+    void WatchWindows(const std::vector<HWND>& windows);
     bool IsBlocked(HWND window);
 
     HWND m_hwnd{};
     HWINEVENTHOOK m_foregroundHook{};
     HWINEVENTHOOK m_moveSizeHook{};
     HWINEVENTHOOK m_minimizeHook{};
-    std::array<HWND, 2> m_watched{};
-    std::array<ThreadHooks, 2> m_threadHooks{};
+    std::vector<HWND> m_watched;              // the front window and the one under each screen's island spot
+    std::vector<ThreadHooks> m_threadHooks;   // one per thread those windows belong to
     bool m_moveSizeActive = false;
     bool m_evaluatePending = false;
     bool m_appBarRegistered = false;
-    State m_state;
-    std::function<void(State)> m_onChange;
+    std::vector<Screen> m_screens;
+    std::function<void(const std::vector<Screen>&)> m_onChange;
     std::function<void(bool)> m_onMoveSize;
     std::function<void()> m_onChecked;
     std::vector<std::wstring> m_blocklist;

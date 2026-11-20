@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "StateMachine.h"
+#include "platform/EdgeSensors.h"
 #include "platform/Settings.h"
 #include "platform/Startup.h"
 #include "render/Widgets.h"
@@ -107,6 +108,32 @@ namespace
 
         // Fullscreen on the other monitor.
         CHECK(ClassifyWindow(Window({ 2560, 0, 5120, 1440 }, kBorderless), kMonitor) == FrontKind::Normal);
+
+        // Each screen decides for itself (Phase 9): a game on one screen
+        // hides only that screen; maximized makes only its screen slim.
+        ScreenFacts game;
+        game.front = FrontKind::Fullscreen;
+        CHECK(DecideScreen(game).hide && !DecideScreen(game).slim);
+        CHECK(!DecideScreen(ScreenFacts{}).hide && !DecideScreen(ScreenFacts{}).slim);  // the other screen: untouched
+        ScreenFacts maximized;
+        maximized.under = FrontKind::Maximized;
+        CHECK(!DecideScreen(maximized).hide && DecideScreen(maximized).slim);
+        ScreenFacts exclusive;
+        exclusive.exclusiveFullscreen = true;
+        CHECK(DecideScreen(exclusive).hide);
+        ScreenFacts blocked;
+        blocked.blocked = true;
+        blocked.front = FrontKind::Maximized;
+        CHECK(DecideScreen(blocked).hide && !DecideScreen(blocked).slim);  // hidden wins over slim
+        ScreenFacts presenting;
+        presenting.presentation = true;
+        CHECK(DecideScreen(presenting).hide);
+
+        // The tucked strip and the sensors: top-centre of your two screens.
+        const RECT legion = StripRect({ 0, 0, 2560, 1440 }, 1.25f, 300.0f);
+        CHECK(legion.left == 1092 && legion.top == 0 && legion.right == 1468 && legion.bottom == 2);
+        const RECT laptop = StripRect({ 2560, -90, 5120, 1510 }, 1.75f, 300.0f);
+        CHECK(laptop.left == 3577 && laptop.top == -90 && laptop.right == 4103 && laptop.bottom == -87);
 
         // Covers the monitor but minimized, cloaked, or a click-through overlay.
         WindowFacts minimized = Window(kMonitor, kBorderless);

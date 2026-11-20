@@ -36,3 +36,12 @@ FrontKind ClassifyWindow(const WindowFacts& window, const RECT& monitor)
     }
     return FrontKind::Normal;
 }
+
+ScreenDecision DecideScreen(const ScreenFacts& facts)
+{
+    ScreenDecision decision;
+    decision.hide = facts.front == FrontKind::Fullscreen || facts.under == FrontKind::Fullscreen ||
+                    facts.exclusiveFullscreen || facts.blocked || facts.presentation;
+    decision.slim = !decision.hide && (facts.front == FrontKind::Maximized || facts.under == FrontKind::Maximized);
+    return decision;
+}

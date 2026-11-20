@@ -18,6 +18,7 @@ struct LayoutSettings
 {
     bool autoHide = true;       // out of sight until the mouse touches the top edge (like an auto-hide taskbar)
     float revealWidth = 300.0f; // ...in the middle this wide
+    bool followMouse = true;    // on whichever screen the mouse touches that spot (false: the main screen only)
     float idleWidth = 200.0f;   // the resting pill
     float idleHeight = 34.0f;
     float topGap = 6.0f;        // space between the top of the screen and the island

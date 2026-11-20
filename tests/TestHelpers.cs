@@ -119,6 +119,83 @@ public static class Visual
         RECT r; GetWindowRect(FindWindow("Island.Pill", null), out r); return r;
     }
 
+    // --- Screens and the edge sensors (PLAN.md Phase 9) ---------------------
+
+    delegate bool EnumWindowsProc(IntPtr h, IntPtr l);
+    delegate bool MonitorEnumProc(IntPtr m, IntPtr dc, ref RECT r, IntPtr d);
+    [StructLayout(LayoutKind.Sequential)] struct MONITORINFO { public int cbSize; public RECT rcMonitor, rcWork; public uint dwFlags; }
+    [DllImport("user32")] static extern bool EnumWindows(EnumWindowsProc f, IntPtr l);
+    [DllImport("user32", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
+    [DllImport("user32")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32")] static extern bool EnumDisplayMonitors(IntPtr dc, IntPtr clip, MonitorEnumProc f, IntPtr d);
+    [DllImport("user32")] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFO i);
+    [DllImport("user32")] static extern IntPtr WindowFromPoint(POINT p);
+    [DllImport("user32")] public static extern IntPtr GetForegroundWindow();
+
+    // Every screen, the main one first, in real pixels.
+    public static RECT[] Screens()
+    {
+        SetThreadDpiAwarenessContext(new IntPtr(-4));
+        var list = new RECT[0];
+        int main = 0;
+        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, (IntPtr m, IntPtr dc, ref RECT r, IntPtr d) =>
+        {
+            var info = new MONITORINFO { cbSize = Marshal.SizeOf(typeof(MONITORINFO)) };
+            GetMonitorInfo(m, ref info);
+            if ((info.dwFlags & 1) != 0) main = list.Length;
+            Array.Resize(ref list, list.Length + 1);
+            list[list.Length - 1] = info.rcMonitor;
+            return true;
+        }, IntPtr.Zero);
+        if (main != 0) { var first = list[main]; list[main] = list[0]; list[0] = first; }
+        return list;
+    }
+
+    public static bool OnScreen(RECT window, RECT screen)
+    {
+        int x = (window.Left + window.Right) / 2;
+        return x >= screen.Left && x < screen.Right && window.Top >= screen.Top && window.Top < screen.Bottom;
+    }
+
+    // The sensor window at the top edge of `screen`, or IntPtr.Zero.
+    public static IntPtr SensorOn(RECT screen)
+    {
+        SetThreadDpiAwarenessContext(new IntPtr(-4));
+        IntPtr found = IntPtr.Zero;
+        EnumWindows((h, l) =>
+        {
+            var name = new System.Text.StringBuilder(64);
+            GetClassName(h, name, 64);
+            RECT r;
+            if (name.ToString() == "Island.EdgeSensor" && GetWindowRect(h, out r) && OnScreen(r, screen)) { found = h; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    public static RECT RectOf(IntPtr window)
+    {
+        SetThreadDpiAwarenessContext(new IntPtr(-4));
+        RECT r; GetWindowRect(window, out r); return r;
+    }
+
+    // As if the mouse touched that screen's sensor, without moving your
+    // mouse: a mouse-move message posted to the sensor (like Touch above).
+    public static void TouchSensor(IntPtr sensor)
+    {
+        RECT r = RectOf(sensor);
+        int x = (r.Right - r.Left) / 2;
+        PostMessage(sensor, 0x0200, IntPtr.Zero, new IntPtr(x & 0xFFFF));  // WM_MOUSEMOVE at (x, 0)
+    }
+
+    // Would the mouse at the top-middle of `screen` reach that window?
+    public static bool ReachesAtTop(IntPtr window, RECT screen)
+    {
+        SetThreadDpiAwarenessContext(new IntPtr(-4));
+        var p = new POINT { X = (screen.Left + screen.Right) / 2, Y = screen.Top };
+        return WindowFromPoint(p) == window;
+    }
+
     public static void Shot(string path, int width, int height)
     {
         int x = (GetSystemMetrics(0) - width) / 2;

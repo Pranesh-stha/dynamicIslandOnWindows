@@ -46,11 +46,7 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
     }
 
     const bool watching = m_fullscreen.Start(instance,
-        [this](FullscreenWatcher::State state)
-        {
-            m_island.SetSlim(state.slim);
-            m_island.SetFullscreenHidden(state.hide);
-        },
+        [this](const std::vector<FullscreenWatcher::Screen>& screens) { m_island.SetScreens(screens); },
         [this](bool active) { m_island.SetWindowDragActive(active); },
         [this] { m_island.KeepOnTop(); });
     if (!watching)
@@ -165,8 +161,7 @@ bool App::Start(HINSTANCE instance, std::wstring_view commandLine)
     });
 
     // If a game is already fullscreen when Island starts, stay hidden.
-    m_island.SetSlim(m_fullscreen.Current().slim);
-    m_island.SetFullscreenHidden(m_fullscreen.Current().hide, /*immediately*/ true);
+    m_island.SetScreens(m_fullscreen.Screens(), /*immediately*/ true);
     if (const IslandPose pose = PoseFromCommandLine(commandLine); pose != IslandPose::None)
     {
         m_island.Pose(pose);
